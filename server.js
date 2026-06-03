@@ -102,20 +102,16 @@ async function buildLiveReport() {
     pullFeed("/feed/inspections").catch(() => []),
     pullFeed("/feed/sites").catch(() => []),
   ]);
+//debug
+console.log("SITES:");
+console.log(JSON.stringify(sites.slice(0, 20), null, 2));
 
-console.log(
-  "ALL ACTIONS:",
-  JSON.stringify(
-    actions.map(a => ({
-      title: a.title,
-      status: a.status,
-      priority: a.priority,
-      action_label: a.action_label,
-      completed_at: a.completed_at
-    })),
-    null,
-    2
-  )
+   console.log(
+  "SITE IDS FROM ACTIONS:",
+  actions.map(a => ({
+    title: a.title,
+    site_id: a.site_id
+  }))
 );
    
   const siteName = {};
