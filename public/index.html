@@ -88,12 +88,85 @@ function render(r, err){
   const k=r.kpis;
   const sum=$(`<div class="card"><div class="secttl"><span class="n">1</span><h2>Management Summary</h2></div>
     <div class="grid g4">
-      ${kpi("Logged this month",k.loggedThisMonth)}${kpi("Closed this month",k.closedThisMonth)}
-      ${kpi("Open now",k.openNow,k.openNow?WARN:BLUE)}${kpi("Phone enquiries",k.phoneCalls)}
-    </div></div>`);
+  ${kpi("Logged this month",k.loggedThisMonth)}
+  ${kpi("Closed this month",k.closedThisMonth)}
+  <div class="kpi" id="openCasesBtn" style="cursor:pointer">
+    <div class="lab">Open now</div>
+    <div class="val" style="color:${k.openNow?WARN:BLUE}">${k.openNow}</div>
+  </div>
+  ${kpi("Phone enquiries",k.phoneCalls)}
+</div>);
   if(r.breaches>0) sum.append($(`<div class="breach">⚠ ${r.breaches} Room Down case(s) open beyond the ${r.targets["Room Down"]}h target — needs attention.</div>`));
   sum.append($(`<div style="margin-top:16px"><canvas id="cTrend"></canvas></div>`));
   C.append(sum);
+  document.getElementById("openCasesBtn").addEventListener("click", () => {
+
+  const openCases = r.openCases || [];
+
+  if (!openCases.length) {
+    alert("No open cases");
+    return;
+  }
+
+  let html = `
+    <div id="openCasesModal" style="
+      position:fixed;
+      inset:0;
+      background:rgba(0,0,0,.5);
+      z-index:9999;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+    ">
+      <div style="
+        background:white;
+        padding:20px;
+        border-radius:12px;
+        width:90%;
+        max-width:900px;
+        max-height:80vh;
+        overflow:auto;
+      ">
+        <h2>Open Cases</h2>
+
+        <table style="width:100%">
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Fault</th>
+              <th>Room</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody>
+  `;
+
+  openCases.forEach(c => {
+    html += `
+      <tr>
+        <td>${c.title}</td>
+        <td>${c.fault}</td>
+        <td>${c.room}</td>
+        <td>${fmt(c.created)}</td>
+      </tr>
+    `;
+  });
+
+  html += `
+          </tbody>
+        </table>
+
+        <button id="closeOpenCases">Close</button>
+      </div>
+    </div>
+  `;
+
+  document.body.insertAdjacentHTML("beforeend", html);
+
+  document.getElementById("closeOpenCases").onclick = () => {
+    document.getElementById("openCasesModal").remove();
+  };
+});
 
   // 2 SLA
   const sla=$(`<div class="card"><div class="secttl"><span class="n">2</span><h2>SLA Performance</h2></div><div class="grid g3" id="slaCards"></div>
