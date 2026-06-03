@@ -135,9 +135,28 @@ console.log(
     const completed = pick(a, ["completed_at", "resolved_at"]);
     const modified = pick(a, ["modified_at", "updated_at"]);
     const isClosed = CONFIG.closedStatuses.includes(statusRaw.toLowerCase()) || !!completed;
-    const fault = CONFIG.priorityToCategory[priorityRaw.toLowerCase()] || "Routine";
+    let fault = "Routine";
+
+const labelText = (a.action_label || "").toLowerCase();
+
+if (labelText.includes("room down")) {
+  fault = "Room Down";
+} else if (labelText.includes("partial fault")) {
+  fault = "Partial Fault";
+}
     const closedAt = isClosed ? (completed || modified) : null;
     const siteId = pick(a, ["site_id", "site"]);
+    console.log(
+  "CASE:",
+  JSON.stringify({
+    title: pick(a, ["title"]),
+    fault,
+    status: isClosed ? "Closed" : "Open",
+    created,
+    closed: closedAt,
+    room: siteName[siteId] || "—"
+  })
+);
     return {
       title: pick(a, ["title"]) || "Action",
       fault,
