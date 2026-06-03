@@ -102,6 +102,15 @@ async function buildLiveReport() {
     pullFeed("/feed/inspections").catch(() => []),
     pullFeed("/feed/sites").catch(() => []),
   ]);
+
+  const completedAction = actions.find(
+  a => (a.status || "").toLowerCase() === "complete"
+);
+
+console.log(
+  "COMPLETED ACTION:",
+  JSON.stringify(completedAction, null, 2)
+);
    
   const siteName = {};
   for (const s of sites) siteName[pick(s, ["id", "site_id"])] = pick(s, ["name", "site_name"]) || "—";
