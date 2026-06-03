@@ -100,13 +100,24 @@ async function buildLiveReport() {
     pullFeed("/feed/inspections").catch(() => []),
     pullFeed("/feed/sites").catch(() => []),
   ]);
-   console.log("FIRST INSPECTION:");
-console.log(JSON.stringify(inspections[0], null, 2));
+   const templateCounts = {};
 
-console.log("TEMPLATE IDS FOUND:");
-console.log(
-  inspections.map(i => i.template_id || i.templateId).filter(Boolean)
-);
+inspections.forEach(i => {
+  const id = i.template_id;
+  const name = i.template_name || "Unknown";
+
+  if (!templateCounts[id]) {
+    templateCounts[id] = {
+      name,
+      count: 0
+    };
+  }
+
+  templateCounts[id].count++;
+});
+
+console.log("TEMPLATES FOUND:");
+console.log(JSON.stringify(templateCounts, null, 2));
 
   const siteName = {};
   for (const s of sites) siteName[pick(s, ["id", "site_id"])] = pick(s, ["name", "site_name"]) || "—";
