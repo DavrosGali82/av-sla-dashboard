@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: av-sla-dashboard
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: SC_API_TOKEN
+        sync: false   # you paste your token into Render's dashboard, not here

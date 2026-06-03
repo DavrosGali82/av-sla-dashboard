@@ -1,0 +1,14 @@
+{
+  "name": "av-sla-dashboard",
+  "version": "1.0.0",
+  "description": "Client-friendly AV SLA reporting dashboard, fed live from the SafetyCulture API.",
+  "type": "module",
+  "main": "server.js",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
