@@ -86,17 +86,27 @@ function render(r, err){
 
   // 1 Summary
   const k=r.kpis;
-  const sum=$(`<div class="card"><div class="secttl"><span class="n">1</span><h2>Management Summary</h2></div>
-    <div class="grid g4">
-  ${kpi("Logged this month",k.loggedThisMonth)}
-  ${kpi("Closed this month",k.closedThisMonth)}
-  <div class="kpi" id="openCasesBtn" style="cursor:pointer">
-    <div class="lab">Open now</div>
-    <div class="val" style="color:${k.openNow?WARN:BLUE}">${k.openNow}</div>
+ const sum=$(`<div class="card">
+  <div class="secttl">
+    <span class="n">1</span>
+    <h2>Management Summary</h2>
   </div>
-  ${kpi("Phone enquiries",k.phoneCalls)}
-</div>);
-  if(r.breaches>0) sum.append($(`<div class="breach">⚠ ${r.breaches} Room Down case(s) open beyond the ${r.targets["Room Down"]}h target — needs attention.</div>`));
+
+  <div class="grid g4">
+    ${kpi("Logged this month",k.loggedThisMonth)}
+    ${kpi("Closed this month",k.closedThisMonth)}
+
+    <div class="kpi" id="openCasesBtn" style="cursor:pointer">
+      <div class="lab">Open now</div>
+      <div class="val" style="color:${k.openNow ? WARN : BLUE}">
+        ${k.openNow}
+      </div>
+    </div>
+
+    ${kpi("Phone enquiries",k.phoneCalls)}
+  </div>
+</div>`);
+  if(r.breaches>0) sum.append($(`<div class="breach">⚠ ${r.breaches} Room Down case(s) open beyond the ${r.targets["Room Down"]}h target – needs attention.</div>`));
   sum.append($(`<div style="margin-top:16px"><canvas id="cTrend"></canvas></div>`));
   C.append(sum);
   document.getElementById("openCasesBtn").addEventListener("click", () => {
