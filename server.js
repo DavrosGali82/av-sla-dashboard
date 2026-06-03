@@ -243,7 +243,13 @@ function computeMetrics(cases, hcvRows) {
       phoneCalls: 0,
     },
     openByCategory, breaches, trendLoggedClosed, slaByCategory, slaTrend, topRooms, byResolution,
-    serviceCalls: { month: cases.filter((c) => monthKey(c.created) === curKey).length, sixMonth: cases.length },
+    openCases: open.map(c => ({
+  title: c.title,
+  fault: c.fault,
+  room: c.room,
+  created: c.created
+})),
+     serviceCalls: { month: cases.filter((c) => monthKey(c.created) === curKey).length, sixMonth: cases.length },
     hcv: {
       scheduled: hcvRows.length,
       completed: hcvRows.filter((h) => h.status === "Completed").length,
