@@ -194,6 +194,13 @@ function computeMetrics(cases, hcvRows) {
   const t = CONFIG.targets;
   const closed = cases.filter((c) => c.status === "Closed" && c.closed);
   const open = cases.filter((c) => c.status === "Open");
+   const openCaseList = open.map((c) => ({
+  title: c.title,
+  room: c.room,
+  fault: c.fault,
+  created: c.created,
+  ageHours: Math.round(hoursBetween(c.created, new Date()))
+}));
 
   const trendLoggedClosed = months.map((m) => ({
     month: m.label,
@@ -226,6 +233,7 @@ function computeMetrics(cases, hcvRows) {
   const breaches = open.filter((c) => c.fault === "Room Down" && hoursBetween(c.created, new Date()) > t["Room Down"]).length;
 
   return {
+     openCaseList,
     meta: { mode: "sample", generatedAt: new Date().toISOString(), company: CONFIG.companyName, monthsLabels: months.map((m) => m.label) },
     targets: t,
     kpis: {
