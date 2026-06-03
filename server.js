@@ -100,6 +100,13 @@ async function buildLiveReport() {
     pullFeed("/feed/inspections").catch(() => []),
     pullFeed("/feed/sites").catch(() => []),
   ]);
+   console.log("FIRST INSPECTION:");
+console.log(JSON.stringify(inspections[0], null, 2));
+
+console.log("TEMPLATE IDS FOUND:");
+console.log(
+  inspections.map(i => i.template_id || i.templateId).filter(Boolean)
+);
 
   const siteName = {};
   for (const s of sites) siteName[pick(s, ["id", "site_id"])] = pick(s, ["name", "site_name"]) || "—";
