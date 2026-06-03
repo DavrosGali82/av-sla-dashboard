@@ -103,13 +103,19 @@ async function buildLiveReport() {
     pullFeed("/feed/sites").catch(() => []),
   ]);
 
-  const completedAction = actions.find(
-  a => (a.status || "").toLowerCase() === "complete"
-);
-
 console.log(
-  "COMPLETED ACTION:",
-  JSON.stringify(completedAction, null, 2)
+  "ALL ACTIONS:",
+  JSON.stringify(
+    actions.map(a => ({
+      title: a.title,
+      status: a.status,
+      priority: a.priority,
+      action_label: a.action_label,
+      completed_at: a.completed_at
+    })),
+    null,
+    2
+  )
 );
    
   const siteName = {};
