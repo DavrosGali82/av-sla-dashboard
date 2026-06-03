@@ -52,8 +52,8 @@ const CONFIG = {
   // Connection panel will list the template IDs it sees so you can fill
   // these in. (Health-check count needs this; everything else works
   // without it.)
-  healthCheckTemplateId: "",
-  serviceCallTemplateId: "",
+  healthCheckTemplateId: "template_58624410208f4025b0757d47d04008d1",
+  serviceCallTemplateId: "template_320444bff169480eb03b995c615b70d4",
 };
 
 /* ----------------------------------------------------------------- utils */
@@ -100,25 +100,7 @@ async function buildLiveReport() {
     pullFeed("/feed/inspections").catch(() => []),
     pullFeed("/feed/sites").catch(() => []),
   ]);
-   const templateCounts = {};
-
-inspections.forEach(i => {
-  const id = i.template_id;
-  const name = i.template_name || "Unknown";
-
-  if (!templateCounts[id]) {
-    templateCounts[id] = {
-      name,
-      count: 0
-    };
-  }
-
-  templateCounts[id].count++;
-});
-
-console.log("TEMPLATES FOUND:");
-console.log(JSON.stringify(templateCounts, null, 2));
-
+   
   const siteName = {};
   for (const s of sites) siteName[pick(s, ["id", "site_id"])] = pick(s, ["name", "site_name"]) || "—";
 
