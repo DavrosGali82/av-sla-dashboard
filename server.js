@@ -122,7 +122,14 @@ console.log(JSON.stringify(sites.slice(0, 20), null, 2));
   const templatesFound = new Set();
 
   // ---- normalise actions into cases
-  const cases = actions.map((a) => {
+  const reportStartDate = new Date(CONFIG.reportStartDate);
+
+const cases = actions
+  .filter((a) => {
+    const created = pick(a, ["created_at", "created"]);
+    return created && new Date(created) >= reportStartDate;
+  })
+  .map((a) => {
     const priorityRaw = (pick(a, ["priority", "priority_label", "priority_name"]) || "").toString();
     const statusRaw = (pick(a, ["status", "status_label", "status_name"]) || "").toString();
     prioritiesFound.add(priorityRaw || "(blank)");
