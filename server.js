@@ -29,6 +29,8 @@ const SC_BASE = "https://api.safetyculture.io";
 const CONFIG = {
   companyName: "Grant Thornton UK",
 
+   reportStartDate: "2026-05-08T00:00:00Z",
+
   // SLA resolution targets, in hours
   targets: { "Room Down": 4, "Partial Fault": 24, Routine: 40 },
 
@@ -134,9 +136,19 @@ async function buildLiveReport() {
 
   // ---- inspections -> health checks (needs template id to classify)
   inspections.forEach((i) => { const t = pick(i, ["template_id", "templateId"]); if (t) templatesFound.add(t); });
-  const hcvRows = inspections
-    .filter((i) => !CONFIG.healthCheckTemplateId || pick(i, ["template_id", "templateId"]) === CONFIG.healthCheckTemplateId)
-    .map((i) => {
+  const reportStartDate = new Date(CONFIG.reportStartDate);
+
+const hcvRows = inspections
+  .filter((i) =>
+    pick(i, ["template_id", "templateId"]) === CONFIG.healthCheckTemplateId
+  )
+  .filter((i) => {
+    const inspectionDate = new Date(
+      pick(i, ["date_completed", "completed_at", "date_started", "created_at"])
+    );
+    return inspectionDate >= reportStartDate;
+  })
+  .map((i) => {
       const done = !!pick(i, ["date_completed", "completed_at"]);
       return {
         ref: (pick(i, ["audit_id", "inspection_id", "id"]) || "").toString().slice(-8),
