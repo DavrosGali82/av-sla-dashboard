@@ -102,17 +102,6 @@ async function buildLiveReport() {
     pullFeed("/feed/inspections").catch(() => []),
     pullFeed("/feed/sites").catch(() => []),
   ]);
-//debug
-console.log("SITES:");
-console.log(JSON.stringify(sites.slice(0, 20), null, 2));
-
-   console.log(
-  "SITE IDS FROM ACTIONS:",
-  actions.map(a => ({
-    title: a.title,
-    site_id: a.site_id
-  }))
-);
    
   const siteName = {};
   for (const s of sites) siteName[pick(s, ["id", "site_id"])] = pick(s, ["name", "site_name"]) || "—";
@@ -149,17 +138,7 @@ if (labelText.includes("room down")) {
 }
     const closedAt = isClosed ? (completed || modified) : null;
     const siteId = pick(a, ["site_id", "site"]);
-    console.log(
-  "CASE:",
-  JSON.stringify({
-    title: pick(a, ["title"]),
-    fault,
-    status: isClosed ? "Closed" : "Open",
-    created,
-    closed: closedAt,
-    room: siteName[siteId] || "—"
-  })
-);
+   
     return {
       title: pick(a, ["title"]) || "Action",
       fault,
@@ -173,7 +152,6 @@ if (labelText.includes("room down")) {
 
   // ---- inspections -> health checks (needs template id to classify)
   inspections.forEach((i) => { const t = pick(i, ["template_id", "templateId"]); if (t) templatesFound.add(t); });
-  const reportStartDate = new Date(CONFIG.reportStartDate);
 
 const hcvRows = inspections
   .filter((i) =>
