@@ -3,6 +3,20 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { readFileSync, writeFileSync, existsSync } from "fs";
+
+/* ── Improvements persistent store ── */
+const IMPROVEMENTS_FILE = path.join(__dirname, "data", "improvements.json");
+function loadImprovements() {
+  try {
+    if (existsSync(IMPROVEMENTS_FILE)) return JSON.parse(readFileSync(IMPROVEMENTS_FILE, "utf8"));
+  } catch { /* ignore */ }
+  return [];
+}
+function saveImprovements(data) {
+  try { writeFileSync(IMPROVEMENTS_FILE, JSON.stringify(data, null, 2)); } catch { /* ignore */ }
+}
+let improvements = loadImprovements();
 const app = express();
 const PORT = process.env.PORT || 3000;
 const SC_TOKEN = process.env.SC_API_TOKEN || "";
@@ -236,7 +250,7 @@ function isThisYear(inspection) {
 async function buildLiveReport(reportingMonthKey = null) {
   const [actions, inspections, sites] = await Promise.all([
     pullFeed("/feed/actions"),
-    pullFeed("/feed/inspections").catch(()=>[]),
+    pullFeed(`/feed/inspections?modified_after=${encodeURIComponent(CONFIG.reportStartDate)}`).catch(()=>[]),
     pullFeed("/feed/sites").catch(()=>[]),
   ]);
 
@@ -333,6 +347,7 @@ async function buildLiveReport(reportingMonthKey = null) {
 
   const report = computeMetrics(cases, hcvRows, officeHCVSummary, reportingMonthKey);
   report.meta.mode = "live";
+  report.improvements = improvements;
   report.meta.connection = {
     actionsPulled:        actions.length,
     inspectionsPulled:    inspections.length,
@@ -511,7 +526,7 @@ function buildSampleReport(reportingMonthKey = null) {
   const report = computeMetrics(cases, hcvRows, officeHCVSummary, reportingMonthKey);
   report.meta.mode = "sample";
   report.meta.connection = null;
-  report.improvements = [
+  report.improvements = improvements.length ? improvements : [
     {desc:"Implement monthly engineer pre-brief",category:"Process",owner:"David T",raised:"2026-01-01",target:"2026-03-31",closed:null,priority:"High",status:"In Progress",progress:"Template drafted",next:"Review March"},
     {desc:"Update room asset register — all London offices",category:"Asset Management",owner:"David T",raised:"2026-01-15",target:"2026-04-30",closed:null,priority:"Medium",status:"Open",progress:"",next:"Assign lead"},
     {desc:"Real-time SLA dashboard for client",category:"Reporting",owner:"David T",raised:"2026-02-01",target:"2026-06-30",closed:null,priority:"High",status:"In Progress",progress:"Dashboard live in Render",next:"Share link with Danni"},
@@ -558,6 +573,32 @@ app.get("/api/debug-hcv", async (req,res)=>{
   } catch(err) {
     res.json({ error:err.message });
   }
+});
+
+app.use(express.json());
+
+// Improvements CRUD
+app.get("/api/improvements", (req,res) => res.json(improvements));
+
+app.post("/api/improvements", (req,res) => {
+  const item = { ...req.body, id: "imp-" + Date.now() };
+  improvements.push(item);
+  saveImprovements(improvements);
+  res.json(item);
+});
+
+app.put("/api/improvements/:id", (req,res) => {
+  const idx = improvements.findIndex(i=>i.id===req.params.id);
+  if (idx === -1) return res.status(404).json({error:"Not found"});
+  improvements[idx] = { ...improvements[idx], ...req.body };
+  saveImprovements(improvements);
+  res.json(improvements[idx]);
+});
+
+app.delete("/api/improvements/:id", (req,res) => {
+  improvements = improvements.filter(i=>i.id!==req.params.id);
+  saveImprovements(improvements);
+  res.json({ok:true});
 });
 
 app.use(express.static(path.join(__dirname,"public")));
