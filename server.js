@@ -294,7 +294,7 @@ async function buildLiveReport() {
       const id      = String(pick(i,["audit_id","inspection_id","id"])||"");
       const details = await fetchInspectionDetails(id);
       const siteId  = pick(i,["site_id","site"]);
-      const siteLbl = siteName[siteId]||"—";
+      const siteLbl = siteName[siteId] || details?.inspection?.metadata?.site?.site_name || "—";
       const office  = matchOffice(siteLbl);
 
       const scheduledRaw = getFieldResponse(details, "scheduled");
