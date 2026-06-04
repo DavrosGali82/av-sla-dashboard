@@ -108,6 +108,7 @@ canvas{max-height:240px;}
     <div class="sub" id="h-sub">Loading…</div>
   </div>
   <div class="hdr-right">
+    <select id="monthPicker" onchange="onMonthChange()" style="background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:600;font-size:12px;cursor:pointer"></select>
     <button class="btn-reload" onclick="reload()">↺ Refresh</button>
     <button class="btn-pdf" onclick="window.print()">⤓ Download PDF</button>
   </div>
@@ -191,14 +192,29 @@ function initNav(){
 }
 
 /* ── fetch */
-async function reload(){
+function onMonthChange(){
+  const m=document.getElementById("monthPicker")?.value;
+  reload(m);
+}
+
+async function reload(month){
   document.getElementById("h-sub").textContent="Loading…";
-  try{ const res=await fetch("/api/report"); R=await res.json(); }
+  const url = month ? `/api/report?month=${month}` : "/api/report";
+  try{ const res=await fetch(url); R=await res.json(); }
   catch(e){ document.getElementById("h-sub").textContent="Could not reach server."; return; }
   const err=R.error?R:null; if(R.fallback)R=R.fallback;
+
+  // Populate month picker on first load
+  const picker=document.getElementById("monthPicker");
+  if(picker && R.meta.monthsKeys && !picker.options.length){
+    picker.innerHTML=R.meta.monthsKeys.map((k,i)=>
+      `<option value="${k}" ${k===R.meta.reportingMonth?"selected":""}>${R.meta.monthsLabels[i]}</option>`
+    ).join("");
+  }
+
   setBanner(R,err);
   document.getElementById("h-title").textContent=`${R.meta.company} — AV Service Report`;
-  document.getElementById("h-sub").textContent="SLA ref: "+R.meta.slaRef+" · Updated "+new Date(R.meta.generatedAt).toLocaleTimeString("en-GB");
+  document.getElementById("h-sub").textContent=`Reporting period: ${R.meta.reportingMonthLabel||""} · SLA ref: ${R.meta.slaRef}`;
   buildAllPages();
   drawChartsForPage("summary");
 }
@@ -207,10 +223,9 @@ function setBanner(r,err){
   const b=document.getElementById("banner");
   if(err){ b.className="banner err noprint"; b.textContent=`Could not read live data: ${err.error}. Showing sample data.`; return; }
   if(r.meta.mode==="sample"){ b.className="banner sample noprint"; b.innerHTML="<b>Sample data.</b> Add <code>SC_API_TOKEN</code> in Render Environment to see live figures."; return; }
-  else {
-    b.className="banner live noprint";
-    b.innerHTML=`<b>Live data.</b> Updated ${new Date(r.meta.generatedAt).toLocaleTimeString("en-GB")}.`;
-  }
+  const cn=r.meta.connection||{};
+  b.className="banner live noprint";
+  b.innerHTML=`<b>Live.</b> ${cn.actionsPulled||0} actions · ${cn.inspectionsPulled||0} inspections. Tags found: ${(cn.tagsFound||[]).join(", ")||"—"}.`;
 }
 
 /* ================================================================
@@ -234,8 +249,8 @@ function buildSummary(){
   // KPI row
   const kpiRow=el("div","g4 gap");
   const kpiDefs=[
-    {lab:"Logged this month",val:k.loggedThisMonth,click:()=>showModal(`Logged this month (${k.loggedThisMonth})`,loggedTable(R.loggedThisMonthCases||[]))},
-    {lab:"Closed this month",val:k.closedThisMonth,click:()=>showModal(`Closed this month (${k.closedThisMonth})`,closedTable(R.closedThisMonthCases||[]))},
+    {lab:`Logged (${R.meta.reportingMonthLabel||""})`,val:k.loggedThisMonth,click:()=>showModal(`Cases logged ${R.meta.reportingMonthLabel||""} (${k.loggedThisMonth})`,loggedTable(R.loggedThisMonthCases||[]))},
+    {lab:`Closed (${R.meta.reportingMonthLabel||""})`,val:k.closedThisMonth,click:()=>showModal(`Cases closed ${R.meta.reportingMonthLabel||""} (${k.closedThisMonth})`,closedTable(R.closedThisMonthCases||[]))},
     {lab:"Open now",val:k.openNow,col:k.openNow?WARN:GOOD,click:()=>showModal(`Open cases (${k.openNow})`,openTable(R.openCases||[]))},
     {lab:"SLA breaches (open)",val:k.roomDownBreaches,col:k.roomDownBreaches?BAD:GOOD},
   ];
@@ -367,8 +382,7 @@ function buildOffices(){
     return `<tr><td><b>${o.office}</b><div class="rag-bar" style="width:120px"><i style="width:${Math.min(100,o.pct)}%;background:${col}"></i></div></td>
       <td>${o.alloc}</td><td><b>${o.used}</b></td><td>${o.remaining}</td>
       <td style="color:${col};font-weight:700">${o.pct}%</td>
-      <td>${pill(o.rag==="red"?"Over / at risk":o.rag==="amber"?"Monitor":"On track",col)}</td>
-      <td style="font-size:12px;color:#888">${o.warranty?o.warranty+" warranty":"—"}</td></tr>`;
+      <td>${pill(o.rag==="red"?"Over / at risk":o.rag==="amber"?"Monitor":"On track",col)}</td><td style="font-size:12px;color:#888">${o.warranty?o.warranty+" warranty":"—"}</td></tr>`;
   }).join("")}</tbody></table>`;
 
   const ch=el("div","card");
