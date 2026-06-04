@@ -207,9 +207,10 @@ function setBanner(r,err){
   const b=document.getElementById("banner");
   if(err){ b.className="banner err noprint"; b.textContent=`Could not read live data: ${err.error}. Showing sample data.`; return; }
   if(r.meta.mode==="sample"){ b.className="banner sample noprint"; b.innerHTML="<b>Sample data.</b> Add <code>SC_API_TOKEN</code> in Render Environment to see live figures."; return; }
-  const cn=r.meta.connection||{};
-  b.className="banner live noprint";
-  b.innerHTML=`<b>Live.</b> ${cn.actionsPulled||0} actions · ${cn.inspectionsPulled||0} inspections. Tags found: ${(cn.tagsFound||[]).join(", ")||"—"}.`;
+  else {
+    b.className="banner live noprint";
+    b.innerHTML=`<b>Live data.</b> Updated ${new Date(r.meta.generatedAt).toLocaleTimeString("en-GB")}.`;
+  }
 }
 
 /* ================================================================
