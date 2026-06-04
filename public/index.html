@@ -20,6 +20,7 @@ body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#f5f6fa;col
 .hdr-right{display:flex;gap:8px;}
 .btn-pdf{background:#fff;color:var(--p);border:none;border-radius:8px;padding:8px 14px;font-weight:700;font-size:12px;cursor:pointer;}
 .btn-reload{background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:600;font-size:12px;cursor:pointer;}
+#monthPicker option{background:#2E1A6B;color:#fff;}
 
 /* ── tabs */
 .tabs{background:var(--p2);display:flex;overflow-x:auto;padding:0 20px;}
@@ -151,20 +152,55 @@ function showModal(title,bodyHtml){
 }
 
 /* ── case tables */
-function openTable(cases){
-  if(!cases.length) return "<p style='color:#999;padding:8px'>No open cases.</p>";
-  return `<table><thead><tr><th>Title</th><th>Room</th><th>Fault</th><th>Office</th><th>Opened</th><th>Age</th></tr></thead><tbody>${cases.map(c=>{
+function sectionHead(txt){
+  return `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--grey);padding:10px 0 4px">${txt}</div>`;
+}
+
+function caseRows_open(cases){
+  return cases.map(c=>{
     const ac=c.ageHours>48?BAD:c.ageHours>24?WARN:GOOD;
-    return `<tr><td>${c.title}</td><td>${c.room}</td><td>${pill(c.fault,FC[c.fault])}</td><td>${c.office||"—"}</td><td>${fmt(c.created)}</td><td style="color:${ac};font-weight:700">${c.ageHours}h</td></tr>`;
-  }).join("")}</tbody></table>`;
+    return `<tr><td>${c.title}</td><td>${c.room}</td><td>${pill(c.fault,FC[c.fault]||BLUE)}</td><td>${c.office||"—"}</td><td>${fmt(c.created)}</td><td style="color:${ac};font-weight:700">${c.ageHours}h</td></tr>`;
+  }).join("");
 }
+
+function openTable(cases){
+  const sla=cases.filter(c=>!c.warranty);
+  const war=cases.filter(c=>c.warranty);
+  if(!cases.length) return "<p style='color:#999;padding:8px'>No open cases.</p>";
+  const head=`<table><thead><tr><th>Title</th><th>Room</th><th>Fault</th><th>Office</th><th>Opened</th><th>Age</th></tr></thead><tbody>`;
+  let html="";
+  if(sla.length){ html+=sectionHead(`SLA cases (${sla.length})`)+head+caseRows_open(sla)+"</tbody></table>"; }
+  if(war.length){ html+=sectionHead(`Warranty cases (${war.length}) — excluded from SLA`)+head+caseRows_open(war)+"</tbody></table>"; }
+  return html||"<p style='color:#999;padding:8px'>No open cases.</p>";
+}
+
 function loggedTable(cases){
+  const sla=cases.filter(c=>!c.warranty);
+  const war=cases.filter(c=>c.warranty);
   if(!cases.length) return "<p style='color:#999;padding:8px'>None this month.</p>";
-  return `<table><thead><tr><th>Title</th><th>Room</th><th>Fault</th><th>Status</th><th>Logged</th></tr></thead><tbody>${cases.map(c=>`<tr><td>${c.title}</td><td>${c.room}</td><td>${pill(c.fault,FC[c.fault])}</td><td>${pill(c.status,c.status==="Closed"?GOOD:WARN)}</td><td>${fmtDT(c.created)}</td></tr>`).join("")}</tbody></table>`;
+  const head=`<table><thead><tr><th>Title</th><th>Room</th><th>Fault</th><th>Status</th><th>Logged</th></tr></thead><tbody>`;
+  const rows=cc=>cc.map(c=>`<tr><td>${c.title}</td><td>${c.room}</td><td>${pill(c.fault,FC[c.fault]||BLUE)}</td><td>${pill(c.status,c.status==="Closed"?GOOD:WARN)}</td><td>${fmtDT(c.created)}</td></tr>`).join("");
+  let html="";
+  if(sla.length){ html+=sectionHead(`SLA cases (${sla.length})`)+head+rows(sla)+"</tbody></table>"; }
+  if(war.length){ html+=sectionHead(`Warranty cases (${war.length}) — excluded from SLA`)+head+rows(war)+"</tbody></table>"; }
+  return html||"<p style='color:#999;padding:8px'>None this month.</p>";
 }
+
 function closedTable(cases){
+  const sla=cases.filter(c=>!c.warranty);
+  const war=cases.filter(c=>c.warranty);
   if(!cases.length) return "<p style='color:#999;padding:8px'>None this month.</p>";
-  return `<table><thead><tr><th>Title</th><th>Room</th><th>Fault</th><th>Resolution</th><th>Closed</th></tr></thead><tbody>${cases.map(c=>`<tr><td>${c.title}</td><td>${c.room}</td><td>${pill(c.fault,FC[c.fault])}</td><td>${c.resolution||"Not recorded"}</td><td>${fmtDT(c.closed)}</td></tr>`).join("")}</tbody></table>`;
+  const head=`<table><thead><tr><th>Title</th><th>Room</th><th>Fault</th><th>Resolution</th><th>Closed</th></tr></thead><tbody>`;
+  const rows=cc=>cc.map(c=>`<tr><td>${c.title}</td><td>${c.room}</td><td>${pill(c.fault,FC[c.fault]||BLUE)}</td><td>${c.resolution||"Not recorded"}</td><td>${fmtDT(c.closed)}</td></tr>`).join("");
+  let html="";
+  if(sla.length){ html+=sectionHead(`SLA cases (${sla.length})`)+head+rows(sla)+"</tbody></table>"; }
+  if(war.length){ html+=sectionHead(`Warranty cases (${war.length}) — excluded from SLA`)+head+rows(war)+"</tbody></table>"; }
+  return html||"<p style='color:#999;padding:8px'>None this month.</p>";
+}
+
+function warrantyTable(cases){
+  if(!cases.length) return "<p style='color:#999;padding:8px'>No warranty cases this month.</p>";
+  return `<table><thead><tr><th>Title</th><th>Room</th><th>Fault</th><th>Status</th><th>Logged</th></tr></thead><tbody>${cases.map(c=>`<tr><td>${c.title}</td><td>${c.room}</td><td>${pill(c.fault,FC[c.fault]||BLUE)}</td><td>${pill(c.status,c.status==="Closed"?GOOD:WARN)}</td><td>${fmtDT(c.created)}</td></tr>`).join("")}</tbody></table>`;
 }
 
 /* ── navigation */
@@ -252,7 +288,7 @@ function buildSummary(){
     {lab:`Closed (${R.meta.reportingMonthLabel||""})`,val:k.closedThisMonth,click:()=>showModal(`Cases closed ${R.meta.reportingMonthLabel||""} (${k.closedThisMonth})`,closedTable(R.closedThisMonthCases||[]))},
     {lab:"Open now",val:k.openNow,col:k.openNow?WARN:GOOD,click:()=>showModal(`Open cases (${k.openNow})`,openTable(R.openCases||[]))},
     {lab:"SLA breaches (open)",val:k.roomDownBreaches,col:k.roomDownBreaches?BAD:GOOD},
-    {lab:`Warranty (${R.meta.reportingMonthLabel||""})`,val:R.warrantyThisMonth||0,col:"#8a8a8a"},
+    {lab:`Warranty (${R.meta.reportingMonthLabel||""})`,val:R.warrantyThisMonth||0,col:"#8a8a8a",click:()=>showModal(`Warranty cases ${R.meta.reportingMonthLabel||""} (${R.warrantyThisMonth||0})`,warrantyTable(R.warrantyThisMonthCases||[]))},
   ];
   kpiDefs.forEach(d=>{
     const t=el("div","kpi"+(d.click?" click":""));
