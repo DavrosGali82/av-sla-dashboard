@@ -246,12 +246,13 @@ function buildSummary(){
   const k=R.kpis;
 
   // KPI row
-  const kpiRow=el("div","g4 gap");
+  const kpiRow=el("div","gap"); kpiRow.style.cssText="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;";
   const kpiDefs=[
     {lab:`Logged (${R.meta.reportingMonthLabel||""})`,val:k.loggedThisMonth,click:()=>showModal(`Cases logged ${R.meta.reportingMonthLabel||""} (${k.loggedThisMonth})`,loggedTable(R.loggedThisMonthCases||[]))},
     {lab:`Closed (${R.meta.reportingMonthLabel||""})`,val:k.closedThisMonth,click:()=>showModal(`Cases closed ${R.meta.reportingMonthLabel||""} (${k.closedThisMonth})`,closedTable(R.closedThisMonthCases||[]))},
     {lab:"Open now",val:k.openNow,col:k.openNow?WARN:GOOD,click:()=>showModal(`Open cases (${k.openNow})`,openTable(R.openCases||[]))},
     {lab:"SLA breaches (open)",val:k.roomDownBreaches,col:k.roomDownBreaches?BAD:GOOD},
+    {lab:`Warranty (${R.meta.reportingMonthLabel||""})`,val:R.warrantyThisMonth||0,col:"#8a8a8a"},
   ];
   kpiDefs.forEach(d=>{
     const t=el("div","kpi"+(d.click?" click":""));
