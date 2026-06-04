@@ -375,41 +375,70 @@ function buildOffices(){
 }
 
 /* ── 5. HCV */
+function hcvStatusCol(s){
+  return s==="Completed"?GOOD:s==="Booked"?BLUE:s==="Overdue"?BAD:s==="In Progress"?BLUE:"#b0b0b0";
+}
+
 function buildHCV(){
   const pg=document.getElementById("pg-hcv"); pg.innerHTML="";
-  const h=R.hcv||{};
+  const oh=R.officeHCV||{};
+  const expected=oh.expected||(17*2);
 
+  // ── KPI tiles
   const tiles=el("div","g4 gap");
-  [{lab:"Scheduled (year)",val:h.scheduled,col:P},{lab:"Completed",val:h.completed,col:GOOD},{lab:"Booked / in progress",val:h.inProgress,col:BLUE},{lab:"Outstanding",val:h.outstanding,col:WARN}]
-    .forEach(d=>{
-      const t=el("div","kpi");
-      t.innerHTML=`<div class="kpi-lab">${d.lab}</div><div class="kpi-val" style="color:${d.col}">${d.val||0}</div>`;
-      tiles.append(t);
-    });
+  [
+    {lab:"Expected this year",       val:expected,           col:P},
+    {lab:"Completed",                val:oh.completed||0,    col:GOOD},
+    {lab:"Booked (upcoming)",        val:oh.booked||0,       col:BLUE},
+    {lab:"Overdue",                  val:oh.overdue||0,      col:oh.overdue?BAD:GOOD},
+  ].forEach(d=>{
+    const t=el("div","kpi");
+    t.innerHTML=`<div class="kpi-lab">${d.lab}</div><div class="kpi-val" style="color:${d.col}">${d.val}</div>`;
+    tiles.append(t);
+  });
   pg.append(tiles);
 
-  // Progress bar
-  const total=h.scheduled||1;
+  // ── Progress bar
   const prog=el("div","card gap");
-  prog.innerHTML=`<div class="card-title">Annual schedule progress</div>
-    <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
-      <div style="flex:1;height:16px;border-radius:99px;background:#e8e8ee;overflow:hidden">
-        <div style="display:flex;height:100%">
-          <div style="width:${(h.completed/total*100).toFixed(1)}%;background:${GOOD}"></div>
-          <div style="width:${(h.inProgress/total*100).toFixed(1)}%;background:${BLUE}"></div>
-        </div>
+  const compPct = expected ? ((oh.completed||0)/expected*100).toFixed(1) : 0;
+  const bkdPct  = expected ? ((oh.booked||0)/expected*100).toFixed(1)    : 0;
+  const ovdPct  = expected ? ((oh.overdue||0)/expected*100).toFixed(1)   : 0;
+  prog.innerHTML=`<div class="card-title">Annual HCV schedule progress — ${oh.completed||0} of ${expected} visits completed</div>
+    <div style="display:flex;align-items:center;gap:12px;margin-top:10px">
+      <div style="flex:1;height:18px;border-radius:99px;background:#e8e8ee;overflow:hidden;display:flex">
+        <div style="width:${compPct}%;background:${GOOD}" title="Completed"></div>
+        <div style="width:${bkdPct}%;background:${BLUE}"  title="Booked"></div>
+        <div style="width:${ovdPct}%;background:${BAD}"   title="Overdue"></div>
       </div>
-      <span style="font-size:13px;white-space:nowrap">${h.completed} of ${h.scheduled} complete</span>
+      <span style="font-size:12px;white-space:nowrap;color:var(--grey)">${compPct}% done</span>
+    </div>
+    <div style="display:flex;gap:16px;margin-top:8px;font-size:12px">
+      ${pill("Completed",GOOD)} ${oh.completed||0} &nbsp;
+      ${pill("Booked",BLUE)} ${oh.booked||0} &nbsp;
+      ${pill("Overdue",BAD)} ${oh.overdue||0} &nbsp;
+      ${pill("Not scheduled","#b0b0b0")} ${oh.notScheduled||0}
     </div>`;
   pg.append(prog);
 
+  // ── Per-office summary table
   const tbl=el("div","card gap");
-  tbl.innerHTML=`<div class="card-title">HCV schedule detail</div>
-  <table><thead><tr><th>Ref</th><th>Room</th><th>Status</th><th>Scheduled</th><th>Completed</th><th>Notes</th></tr></thead>
-  <tbody>${(h.rows||[]).map(row=>{
-    const col=row.status==="Completed"?GOOD:row.status==="In Progress"?BLUE:WARN;
-    return `<tr><td>${row.ref||"—"}</td><td>${row.room}</td><td>${pill(row.status,col)}</td><td>${fmt(row.scheduled)}</td><td>${fmt(row.completed)}</td><td style="color:var(--grey)">${row.notes||"—"}</td></tr>`;
-  }).join("")}</tbody></table>`;
+  const rows=(oh.summary||[]).map(o=>{
+    const v=(v)=>{
+      if(!v||v.status==="Not scheduled")
+        return `<td>${pill("Not scheduled","#b0b0b0")}</td><td style="color:#bbb">—</td>`;
+      const col=hcvStatusCol(v.status);
+      const date=v.status==="Completed"?fmt(v.completed):fmt(v.scheduled);
+      const dateLabel=v.status==="Completed"?"Completed":"Scheduled";
+      return `<td>${pill(v.status,col)}${v.outcome?` <span style="font-size:11px;color:var(--grey)">${v.outcome}</span>`:""}</td><td style="font-size:12px;color:var(--grey)">${dateLabel}: ${date}</td>`;
+    };
+    return `<tr><td><b>${o.office}</b></td>${v(o.visit1)}${v(o.visit2)}</tr>`;
+  }).join("");
+
+  tbl.innerHTML=`<div class="card-title">Per-office HCV status — Visit 1 &amp; Visit 2</div>
+  <table>
+    <thead><tr><th>Office</th><th>Visit 1 status</th><th>Visit 1 date</th><th>Visit 2 status</th><th>Visit 2 date</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
   pg.append(tbl);
 }
 
