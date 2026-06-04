@@ -484,6 +484,18 @@ function buildSampleReport() {
 }
 
 /* ---------------------------------------------------------------- routes */
+app.get("/api/debug-hcv", async (req,res)=>{
+  try {
+    const inspections = await pullFeed("/feed/inspections");
+    const match = inspections.find(i=>pick(i,["template_id","templateId"])===CONFIG.officeHCVTemplateId);
+    if (!match) return res.json({error:"No office HCV inspections found"});
+    const id = String(pick(match,["audit_id","inspection_id","id"])||"");
+    const details = await fetchInspectionDetails(id);
+    res.json({ inspectionId:id, feedRecord:match, details });
+  } catch(err) {
+    res.json({error:err.message});
+  }
+});
 app.get("/api/report", async (req,res)=>{
   try {
     if (!SC_TOKEN) return res.json(buildSampleReport());
