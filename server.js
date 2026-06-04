@@ -362,7 +362,7 @@ function computeMetrics(cases, hcvRows, officeHCVSummary = [], reportingMonthKey
   }));
 
   const slaByCategory = FAULTS.map(f=>{
-    const cc  = closed.filter(c=>c.fault===f);
+    const cc  = closed.filter(c=>c.fault===f&&!c.warranty);
     const avg = cc.length ? cc.reduce((s,c)=>s+hrsB(c.created,c.closed),0)/cc.length : 0;
     return { fault:f, avg:+avg.toFixed(1), target:t[f], within:cc.length?avg<=t[f]:true, count:cc.length };
   });
@@ -370,14 +370,14 @@ function computeMetrics(cases, hcvRows, officeHCVSummary = [], reportingMonthKey
   const slaTrend = months.map(m=>{
     const row = { month:m.label };
     FAULTS.forEach(f=>{
-      const cc = closed.filter(c=>c.fault===f&&mKey(c.closed)===m.key);
+      const cc = closed.filter(c=>c.fault===f&&mKey(c.closed)===m.key&&!c.warranty);
       row[f] = cc.length ? +(cc.reduce((s,c)=>s+hrsB(c.created,c.closed),0)/cc.length).toFixed(1) : null;
     });
     return row;
   });
 
   const breachedCases = closed
-    .filter(c=>hrsB(c.created,c.closed)>t[c.fault])
+    .filter(c=>!c.warranty&&hrsB(c.created,c.closed)>t[c.fault])
     .map(c=>({ title:c.title, fault:c.fault, room:c.room, office:c.office,
                hrs:+hrsB(c.created,c.closed).toFixed(1), target:t[c.fault],
                over:+(hrsB(c.created,c.closed)-t[c.fault]).toFixed(1), closed:c.closed }))
@@ -417,7 +417,7 @@ function computeMetrics(cases, hcvRows, officeHCVSummary = [], reportingMonthKey
 
   const openByCategory = {};
   FAULTS.forEach(f=>{ openByCategory[f]=open.filter(c=>c.fault===f).length; });
-  const roomDownBreaches = open.filter(c=>c.fault==="Room Down"&&hrsB(c.created,now())>t["Room Down"]).length;
+  const roomDownBreaches = open.filter(c=>!c.warranty&&c.fault==="Room Down"&&hrsB(c.created,now())>t["Room Down"]).length;
 
   // Office HCV counts
   const expectedTotal   = CONFIG.offices.length * CONFIG.visitsPerOfficePerYear;
@@ -434,6 +434,7 @@ function computeMetrics(cases, hcvRows, officeHCVSummary = [], reportingMonthKey
     targets:t, responseTargets:CONFIG.responseTargets,
     callOutAllocationTotal: TOTAL_CALLOUT_ALLOC,
     kpis:{ loggedThisMonth:curCases.length, closedThisMonth:curClosed.length, openNow:open.length, roomDownBreaches },
+    warrantyThisMonth: curCases.filter(c=>c.warranty).length,
     openByCategory, roomDownBreaches,
     trendLoggedClosed, slaByCategory, slaTrend, breachedCases,
     topRooms, topRoomNames, roomTrend, byResolution, topResNames, resTrend,
