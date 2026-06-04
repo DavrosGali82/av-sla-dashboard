@@ -223,9 +223,8 @@ function setBanner(r,err){
   const b=document.getElementById("banner");
   if(err){ b.className="banner err noprint"; b.textContent=`Could not read live data: ${err.error}. Showing sample data.`; return; }
   if(r.meta.mode==="sample"){ b.className="banner sample noprint"; b.innerHTML="<b>Sample data.</b> Add <code>SC_API_TOKEN</code> in Render Environment to see live figures."; return; }
-  const cn=r.meta.connection||{};
   b.className="banner live noprint";
-  b.innerHTML=`<b>Live.</b> ${cn.actionsPulled||0} actions · ${cn.inspectionsPulled||0} inspections. Tags found: ${(cn.tagsFound||[]).join(", ")||"—"}.`;
+  b.innerHTML=`<b>Live data.</b> Updated ${new Date(r.meta.generatedAt).toLocaleTimeString("en-GB")}.`;
 }
 
 /* ================================================================
@@ -364,7 +363,7 @@ function buildOffices(){
   const pg=document.getElementById("pg-offices"); pg.innerHTML="";
 
   const intro=el("div","card gap");
-  intro.innerHTML=`<div class="card-title">Call-out allocation tracking — ${R.callOutAllocation} per office per year (SLA TECHPR-0510)</div>
+  intro.innerHTML=`<div class="card-title">Call-out allocation tracking — ${R.callOutAllocationTotal||29} call-outs per year across estate (SLA TECHPR-0510)</div>
   <div style="display:flex;gap:20px;font-size:13px;margin-top:8px">
     <span>${pill("On track",GOOD)} Used &lt;60%</span>
     <span>${pill("Monitor",WARN)} Used 60–90%</span>
