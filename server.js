@@ -413,7 +413,7 @@ function computeMetrics(cases, hcvRows, officeHCVSummary = [], reportingMonthKey
   const curCases  = cases.filter(c=>mKey(c.created)===curKey);
   const curClosed = closed.filter(c=>mKey(c.closed)===curKey);
   const openCases = open.map(c=>({ title:c.title, fault:c.fault, room:c.room, office:c.office,
-    created:c.created, ageHours:Math.round(hrsB(c.created,now())) }));
+    created:c.created, ageHours:Math.round(hrsB(c.created,now())), warranty:c.warranty||false }));
 
   const openByCategory = {};
   FAULTS.forEach(f=>{ openByCategory[f]=open.filter(c=>c.fault===f).length; });
@@ -435,6 +435,7 @@ function computeMetrics(cases, hcvRows, officeHCVSummary = [], reportingMonthKey
     callOutAllocationTotal: TOTAL_CALLOUT_ALLOC,
     kpis:{ loggedThisMonth:curCases.length, closedThisMonth:curClosed.length, openNow:open.length, roomDownBreaches },
     warrantyThisMonth: curCases.filter(c=>c.warranty).length,
+    warrantyThisMonthCases: curCases.filter(c=>c.warranty).map(c=>({title:c.title,fault:c.fault,room:c.room,created:c.created,status:c.status,warranty:true})),
     openByCategory, roomDownBreaches,
     trendLoggedClosed, slaByCategory, slaTrend, breachedCases,
     topRooms, topRoomNames, roomTrend, byResolution, topResNames, resTrend,
@@ -446,8 +447,8 @@ function computeMetrics(cases, hcvRows, officeHCVSummary = [], reportingMonthKey
     officeHCV:{ expected:expectedTotal, completed:hcvCompleted, booked:hcvBooked,
                 overdue:hcvOverdue, notScheduled:hcvNotScheduled, summary:officeHCVSummary },
     officeAllocations,
-    loggedThisMonthCases: curCases.map(c=>({title:c.title,fault:c.fault,room:c.room,created:c.created,status:c.status})),
-    closedThisMonthCases: curClosed.map(c=>({title:c.title,fault:c.fault,room:c.room,closed:c.closed,resolution:c.resolution})),
+    loggedThisMonthCases: curCases.map(c=>({title:c.title,fault:c.fault,room:c.room,created:c.created,status:c.status,warranty:c.warranty||false})),
+    closedThisMonthCases: curClosed.map(c=>({title:c.title,fault:c.fault,room:c.room,closed:c.closed,resolution:c.resolution,warranty:c.warranty||false})),
     openCases, improvements:[],
   };
 }
