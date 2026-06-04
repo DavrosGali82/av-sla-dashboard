@@ -266,7 +266,7 @@ async function buildLiveReport() {
       return { title:pick(a,["title"])||"Action", fault, resolution,
                status:isClosed?"Closed":"Open", created,
                closed:isClosed?(completed||modified):null,
-               room, office:matchOffice(room), tags };
+               room, office:matchOffice(room), tags, warranty:tags.some(t=>t.includes("warranty")) };
     }).filter(c=>c.created);
 
   inspections.forEach(i=>{ const t=pick(i,["template_id","templateId"]); if(t) diag.templatesFound.add(t); });
@@ -395,13 +395,19 @@ function computeMetrics(cases, hcvRows, officeHCVSummary = []) {
 
   // Per-office call-out allocation tracking
   const officeUsage = {};
-  cases.forEach(c=>{ officeUsage[c.office]=(officeUsage[c.office]||0)+1; });
+  const warrantyByOffice = {};
+cases.forEach(c=>{
+  if(c.warranty) warrantyByOffice[c.office]=(warrantyByOffice[c.office]||0)+1;
+  else officeUsage[c.office]=(officeUsage[c.office]||0)+1;
+});
   const allOffices = new Set([...CONFIG.offices,...Object.keys(officeUsage)]);
   const officeAllocations = [...allOffices].map(o=>{
     const used  = officeUsage[o]||0;
     const alloc = CONFIG.callOutAllocation[o] || 1;
     const pct   = +(used/alloc*100).toFixed(1);
-    return { office:o, alloc, used, remaining:alloc-used, pct, rag:pct>=90?"red":pct>=60?"amber":"green" };
+    return { office:o, alloc, used, remaining:alloc-used, pct, 
+         rag:pct>=90?"red":pct>=60?"amber":"green",
+         warranty:warrantyByOffice[o]||0 };
   }).sort((a,b)=>b.pct-a.pct);
 
   const curCases  = cases.filter(c=>mKey(c.created)===curKey);
