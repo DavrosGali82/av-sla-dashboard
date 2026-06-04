@@ -361,13 +361,14 @@ function buildOffices(){
   const row=el("div","g21 gap");
   const tbl=el("div","card");
   tbl.innerHTML=`<div class="card-title">Per-office usage</div>
-  <table><thead><tr><th>Office</th><th>Allocated</th><th>Used</th><th>Remaining</th><th>%</th><th>Status</th></tr></thead>
+  <table><thead><tr><th>Office</th><th>Allocated</th><th>Used</th><th>Remaining</th><th>%</th><th>Status</th><th>Warranty</th></tr></thead>
   <tbody>${(R.officeAllocations||[]).map(o=>{
     const col=ragCol(o.rag);
     return `<tr><td><b>${o.office}</b><div class="rag-bar" style="width:120px"><i style="width:${Math.min(100,o.pct)}%;background:${col}"></i></div></td>
       <td>${o.alloc}</td><td><b>${o.used}</b></td><td>${o.remaining}</td>
       <td style="color:${col};font-weight:700">${o.pct}%</td>
-      <td>${pill(o.rag==="red"?"Over / at risk":o.rag==="amber"?"Monitor":"On track",col)}</td></tr>`;
+      <td>${pill(o.rag==="red"?"Over / at risk":o.rag==="amber"?"Monitor":"On track",col)}</td>
+      <td style="font-size:12px;color:#888">${o.warranty?o.warranty+" warranty":"—"}</td></tr>`;
   }).join("")}</tbody></table>`;
 
   const ch=el("div","card");
