@@ -62,6 +62,7 @@ const CONFIG = {
   closedStatuses: ["complete","completed","closed","done","resolved"],
   healthCheckTemplateId: "template_58624410208f4025b0757d47d04008d1",
   serviceCallTemplateId: "template_320444bff169480eb03b995c615b70d4",
+  officeHCVTemplateId: "template_a68b6c7b138e438f89c8706ff3b7ea37",
 };
 
 /* ---------------------------------------------------------------- utils */
