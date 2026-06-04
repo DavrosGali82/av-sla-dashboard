@@ -171,6 +171,22 @@ function getFieldResponse(details, labelKeyword) {
 }
 
 /* ---------------------------------------------------------------- live */
+       // collect all field labels for debugging
+function getAllFieldLabels(details) {
+  if (!details) return [];
+  const labels = [];
+  function walk(items) {
+    if (!Array.isArray(items)) return;
+    items.forEach(item => {
+      const lbl = item.label || item.item?.label;
+      if (lbl) labels.push(lbl);
+      walk(item.items || item.children || []);
+    });
+  }
+  const items = details.items || details.audit?.items || details.pages?.flatMap(p=>p.items||[]) || [];
+  walk(items);
+  return labels;
+}
 async function buildLiveReport() {
   const [actions, inspections, sites] = await Promise.all([
     pullFeed("/feed/actions"),
@@ -224,7 +240,11 @@ async function buildLiveReport() {
 
   // ── Office HCV summary (new template — one record per office visit)
   const officeHCVInspections = inspections
-    .filter(i=>pick(i,["template_id","templateId"])===CONFIG.officeHCVTemplateId);
+  .filter(i=>pick(i,["template_id","templateId"])===CONFIG.officeHCVTemplateId)
+  .filter(i=>{
+    const d = new Date(pick(i,["created_at","date_started","date_completed"])||0);
+    return d >= new Date(new Date().getFullYear(), 0, 1); // current year only
+  });
 
   // Fetch full details for each so we can read the Scheduled Date field
   const officeHCVRaw = await Promise.all(
@@ -234,6 +254,7 @@ async function buildLiveReport() {
       const siteId  = pick(i,["site_id","site"]);
       const siteLbl = siteName[siteId]||"—";
       const office  = matchOffice(siteLbl);
+
 
       // Read question responses
       const scheduledRaw = getFieldResponse(details, "scheduled");
@@ -257,7 +278,7 @@ async function buildLiveReport() {
 
       const visitNum = visitNumRaw && visitNumRaw.includes("2") ? 2 : 1;
 
-      return { id, office, visitNum, status, scheduled:scheduledRaw||null, completed:completed||null, outcome, siteName:siteLbl };
+      return { id, office, visitNum, status, scheduled:scheduledRaw||null, completed:completed||null, outcome, siteName:siteLbl, _debugFields: getAllFieldLabels(details) };
     })
   );
 
@@ -283,6 +304,7 @@ async function buildLiveReport() {
     statusesFound:     [...diag.statusesFound],
     tagsFound:         [...diag.tagsFound].slice(0,20),
     templatesFound:    [...diag.templatesFound].slice(0,10),
+    officeHCVFieldLabels: officeHCVRaw.slice(0,1).map(h=>h._debugFields).flat(),
   };
   return report;
 }
