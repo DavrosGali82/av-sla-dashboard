@@ -233,7 +233,7 @@ function isThisYear(inspection) {
 }
 
 /* ---------------------------------------------------------------- live */
-async function buildLiveReport() {
+async function buildLiveReport(reportingMonthKey = null) {
   const [actions, inspections, sites] = await Promise.all([
     pullFeed("/feed/actions"),
     pullFeed("/feed/inspections").catch(()=>[]),
@@ -266,7 +266,8 @@ async function buildLiveReport() {
       return { title:pick(a,["title"])||"Action", fault, resolution,
                status:isClosed?"Closed":"Open", created,
                closed:isClosed?(completed||modified):null,
-               room, office:matchOffice(room), tags, warranty:tags.some(t=>t.includes("warranty")) };
+               room, office:matchOffice(room), tags,
+               warranty:tags.some(t=>t.includes("warranty")) };
     }).filter(c=>c.created);
 
   inspections.forEach(i=>{ const t=pick(i,["template_id","templateId"]); if(t) diag.templatesFound.add(t); });
@@ -294,7 +295,7 @@ async function buildLiveReport() {
       const id      = String(pick(i,["audit_id","inspection_id","id"])||"");
       const details = await fetchInspectionDetails(id);
       const siteId  = pick(i,["site_id","site"]);
-      const siteLbl = siteName[siteId] || details?.inspection?.metadata?.site?.site_name || "—";
+      const siteLbl = siteName[siteId]||"—";
       const office  = matchOffice(siteLbl);
 
       const scheduledRaw = getFieldResponse(details, "scheduled");
@@ -330,7 +331,7 @@ async function buildLiveReport() {
     return { office:o, visit1:mkSlot(v1), visit2:mkSlot(v2) };
   });
 
-  const report = computeMetrics(cases, hcvRows, officeHCVSummary);
+  const report = computeMetrics(cases, hcvRows, officeHCVSummary, reportingMonthKey);
   report.meta.mode = "live";
   report.meta.connection = {
     actionsPulled:        actions.length,
@@ -346,9 +347,10 @@ async function buildLiveReport() {
 }
 
 /* ---------------------------------------------------------------- metrics */
-function computeMetrics(cases, hcvRows, officeHCVSummary = []) {
+function computeMetrics(cases, hcvRows, officeHCVSummary = [], reportingMonthKey = null) {
   const months   = last6Months();
-  const curKey   = months[months.length-1].key;
+  const curKey   = reportingMonthKey || months[months.length-2].key;
+  const curMonth = months.find(m=>m.key===curKey) || months[months.length-2];
   const t        = CONFIG.targets;
   const closed   = cases.filter(c=>c.status==="Closed"&&c.closed);
   const open     = cases.filter(c=>c.status==="Open");
@@ -396,18 +398,16 @@ function computeMetrics(cases, hcvRows, officeHCVSummary = []) {
   // Per-office call-out allocation tracking
   const officeUsage = {};
   const warrantyByOffice = {};
-cases.forEach(c=>{
-  if(c.warranty) warrantyByOffice[c.office]=(warrantyByOffice[c.office]||0)+1;
-  else officeUsage[c.office]=(officeUsage[c.office]||0)+1;
-});
+  cases.forEach(c=>{
+    if(c.warranty) warrantyByOffice[c.office]=(warrantyByOffice[c.office]||0)+1;
+    else officeUsage[c.office]=(officeUsage[c.office]||0)+1;
+  });
   const allOffices = new Set([...CONFIG.offices,...Object.keys(officeUsage)]);
   const officeAllocations = [...allOffices].map(o=>{
     const used  = officeUsage[o]||0;
     const alloc = CONFIG.callOutAllocation[o] || 1;
     const pct   = +(used/alloc*100).toFixed(1);
-    return { office:o, alloc, used, remaining:alloc-used, pct, 
-         rag:pct>=90?"red":pct>=60?"amber":"green",
-         warranty:warrantyByOffice[o]||0 };
+    return { office:o, alloc, used, remaining:alloc-used, pct, rag:pct>=90?"red":pct>=60?"amber":"green", warranty:warrantyByOffice[o]||0 };
   }).sort((a,b)=>b.pct-a.pct);
 
   const curCases  = cases.filter(c=>mKey(c.created)===curKey);
@@ -429,7 +429,8 @@ cases.forEach(c=>{
 
   return {
     meta:{ mode:"sample", generatedAt:now().toISOString(), company:CONFIG.companyName,
-           monthsLabels:months.map(m=>m.label), slaRef:"TECHPR-0510" },
+           monthsLabels:months.map(m=>m.label), monthsKeys:months.map(m=>m.key),
+           reportingMonth:curKey, reportingMonthLabel:curMonth.label, slaRef:"TECHPR-0510" },
     targets:t, responseTargets:CONFIG.responseTargets,
     callOutAllocationTotal: TOTAL_CALLOUT_ALLOC,
     kpis:{ loggedThisMonth:curCases.length, closedThisMonth:curClosed.length, openNow:open.length, roomDownBreaches },
@@ -451,7 +452,7 @@ cases.forEach(c=>{
 }
 
 /* ---------------------------------------------------------------- sample */
-function buildSampleReport() {
+function buildSampleReport(reportingMonthKey = null) {
   const months = last6Months();
   const roomDefs = [
     {room:"801 - Event Space",office:"Leeds"},
@@ -505,7 +506,7 @@ function buildSampleReport() {
     return { office:o, visit1:mkV(s1), visit2:mkV(s2) };
   });
 
-  const report = computeMetrics(cases, hcvRows, officeHCVSummary);
+  const report = computeMetrics(cases, hcvRows, officeHCVSummary, reportingMonthKey);
   report.meta.mode = "sample";
   report.meta.connection = null;
   report.improvements = [
@@ -518,12 +519,13 @@ function buildSampleReport() {
 
 /* ---------------------------------------------------------------- routes */
 app.get("/api/report", async (req,res)=>{
+  const monthParam = req.query.month || null;
   try {
-    if (!SC_TOKEN) return res.json(buildSampleReport());
-    res.json(await buildLiveReport());
+    if (!SC_TOKEN) return res.json(buildSampleReport(monthParam));
+    res.json(await buildLiveReport(monthParam));
   } catch(err) {
     console.error(err);
-    res.json({ error:err.message, fallback:buildSampleReport() });
+    res.json({ error:err.message, fallback:buildSampleReport(monthParam) });
   }
 });
 
@@ -560,3 +562,5 @@ app.use(express.static(path.join(__dirname,"public")));
 app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
 
 app.listen(PORT,()=>console.log(`AV Dashboard on port ${PORT} — ${SC_TOKEN?"LIVE":"SAMPLE DATA"}`));
+
+
