@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AV Service Report</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{ --purple:#1B0A4B; --purple2:#3D2780; --blue:#2F7FD1; --blueLt:#E8F1FB;
+         --ink:#1c1830; --grey:#6b6b78; --line:#e7e7ee; --good:#1F9D63; --warn:#E8A23D; --bad:#E04F5F; }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:#f5f6fa;}
+  .wrap{max-width:1100px;margin:0 auto;padding:28px;}
+  header.rep{background:var(--purple);color:#fff;border-radius:16px;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-end;}
+  header.rep h1{margin:0;font-size:24px;}
+  header.rep .sub{color:#c9c2e8;font-size:13px;margin-top:4px;}
+  .brand{font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--blue);font-weight:700;}
+  .btn{background:#fff;color:var(--purple);border:none;border-radius:10px;padding:10px 16px;font-weight:700;font-size:13px;cursor:pointer;}
+  .banner{margin:14px 0;padding:10px 14px;border-radius:10px;font-size:13px;}
+  .banner.sample{background:#FFF6E5;border:1px solid #F2D89A;color:#8a6400;}
+  .banner.live{background:#E8F7EE;border:1px solid #B7E2C7;color:#1a6b40;}
+  .banner.err{background:#FDECEC;border:1px solid #F3C0C0;color:#B03340;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px;margin-top:18px;box-shadow:0 1px 3px rgba(27,10,75,.05);}
+  .secttl{display:flex;align-items:center;gap:10px;margin:0 0 16px;}
+  .secttl .n{background:var(--purple);color:#fff;width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;}
+  .secttl h2{font-size:17px;margin:0;}
+  .grid{display:grid;gap:14px;}
+  .g4{grid-template-columns:repeat(4,1fr);} .g3{grid-template-columns:repeat(3,1fr);} .g2{grid-template-columns:1fr 1fr;}
+  .kpi{border:1px solid var(--line);border-radius:12px;padding:16px;transition:box-shadow .15s;}
+  .kpi.clickable{cursor:pointer;}
+  .kpi.clickable:hover{box-shadow:0 4px 12px rgba(27,10,75,.12);border-color:#c0b8d8;}
+  .kpi .lab{font-size:12px;color:var(--grey);font-weight:600;}
+  .kpi .val{font-size:30px;font-weight:800;margin-top:4px;}
+  .kpi .hint{font-size:10px;color:#bbb;margin-top:4px;}
+  .sla{border-radius:12px;padding:16px;background:var(--blueLt);}
+  .sla .top{display:flex;justify-content:space-between;align-items:center;}
+  .tag{font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;}
+  .bar{height:8px;border-radius:99px;background:#fff;overflow:hidden;margin-top:10px;}
+  .bar > i{display:block;height:100%;}
+  .breach{display:flex;gap:10px;align-items:center;background:#FDECEC;border:1px solid #F3C0C0;color:#B03340;border-radius:10px;padding:12px;font-weight:700;font-size:13px;margin-top:14px;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{text-align:left;text-transform:uppercase;font-size:11px;color:var(--grey);padding:8px 10px;background:var(--blueLt);}
+  td{padding:8px 10px;border-top:1px solid var(--line);}
+  canvas{max-height:220px;}
+  .muted{color:var(--grey);font-size:12px;margin-top:8px;}
+  /* modal */
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;justify-content:center;align-items:center;padding:16px;}
+  .modal{background:#fff;border-radius:16px;width:100%;max-width:860px;max-height:85vh;display:flex;flex-direction:column;}
+  .modal-head{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;}
+  .modal-head h3{margin:0;font-size:17px;}
+  .modal-body{padding:18px 22px;overflow-y:auto;}
+  .close-btn{background:none;border:none;font-size:22px;cursor:pointer;color:var(--grey);line-height:1;}
+  .age-ok{color:var(--good);font-weight:600;}
+  .age-warn{color:var(--warn);font-weight:600;}
+  .age-bad{color:var(--bad);font-weight:600;}
+  @media print{
+    body{background:#fff;}
+    .noprint{display:none !important;}
+    .card,header.rep{box-shadow:none;break-inside:avoid;}
+    .wrap{padding:0;max-width:none;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <header class="rep">
+    <div>
+      <div class="brand">Technative · AV Service Platform</div>
+      <h1 id="h-title">AV Service Report</h1>
+      <div class="sub" id="h-sub">Loading…</div>
+    </div>
+    <button class="btn noprint" onclick="window.print()">⤓ Download PDF</button>
+  </header>
+  <div id="content"></div>
+</div>
+
+<script>
+const PURPLE="#1B0A4B",PURPLE2="#3D2780",BLUE="#2F7FD1",GOOD="#1F9D63",WARN="#E8A23D",BAD="#E04F5F";
+const FAULTS=["Room Down","Partial Fault","Routine"];
+const FAULTCOL={"Room Down":BAD,"Partial Fault":WARN,"Routine":BLUE};
+const $=(h)=>{const d=document.createElement("div");d.innerHTML=h.trim();return d.firstChild;};
+
+/* ---------------------------------------------------------------- modal */
+function showModal(title, bodyHtml) {
+  const existing = document.getElementById("_modal");
+  if (existing) existing.remove();
+  const m = $(`<div class="modal-bg" id="_modal">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>${title}</h3>
+        <button class="close-btn" id="_mclose">✕</button>
+      </div>
+      <div class="modal-body">${bodyHtml}</div>
+    </div>
+  </div>`);
+  document.body.append(m);
+  document.getElementById("_mclose").onclick = () => m.remove();
+  m.addEventListener("click", e => { if (e.target === m) m.remove(); });
+}
+
+function faultTag(f) {
+  const c = FAULTCOL[f] || BLUE;
+  return `<span class="tag" style="background:${c}22;color:${c}">${f||"—"}</span>`;
+}
+
+function ageClass(h) {
+  return h > 48 ? "age-bad" : h > 24 ? "age-warn" : "age-ok";
+}
+
+/* ---------------------------------------------------------------- case table builders */
+function openCasesTable(cases) {
+  if (!cases.length) return "<p style='color:#999'>No open cases.</p>";
+  return `<table>
+    <thead><tr><th>Title</th><th>Room</th><th>Fault</th><th>Opened</th><th>Age</th></tr></thead>
+    <tbody>${cases.map(c => `<tr>
+      <td>${c.title}</td>
+      <td>${c.room}</td>
+      <td>${faultTag(c.fault)}</td>
+      <td>${fmt(c.created)}</td>
+      <td class="${ageClass(c.ageHours)}">${c.ageHours}h</td>
+    </tr>`).join("")}</tbody>
+  </table>`;
+}
+
+function loggedCasesTable(cases) {
+  if (!cases.length) return "<p style='color:#999'>No cases logged this month.</p>";
+  return `<table>
+    <thead><tr><th>Title</th><th>Room</th><th>Fault</th><th>Logged</th><th>Status</th></tr></thead>
+    <tbody>${cases.map(c => {
+      const sc = c.status==="Closed"?"#1F9D63":"#E8A23D";
+      return `<tr>
+        <td>${c.title}</td>
+        <td>${c.room}</td>
+        <td>${faultTag(c.fault)}</td>
+        <td>${fmt(c.created)}</td>
+        <td><span class="tag" style="background:${sc}22;color:${sc}">${c.status}</span></td>
+      </tr>`;
+    }).join("")}</tbody>
+  </table>`;
+}
+
+function closedCasesTable(cases) {
+  if (!cases.length) return "<p style='color:#999'>No cases closed this month.</p>";
+  return `<table>
+    <thead><tr><th>Title</th><th>Room</th><th>Fault</th><th>Closed</th><th>Resolution</th></tr></thead>
+    <tbody>${cases.map(c => `<tr>
+      <td>${c.title}</td>
+      <td>${c.room}</td>
+      <td>${faultTag(c.fault)}</td>
+      <td>${fmt(c.closed)}</td>
+      <td>${c.resolution||"Not recorded"}</td>
+    </tr>`).join("")}</tbody>
+  </table>`;
+}
+
+/* ---------------------------------------------------------------- fetch */
+async function go(){
+  let r;
+  try { const res=await fetch("/api/report"); r=await res.json(); }
+  catch(e) { document.getElementById("h-sub").textContent="Could not reach the server."; return; }
+  const err = r.error ? r : null;
+  if (r.fallback) r = r.fallback;
+  render(r, err);
+}
+
+/* ---------------------------------------------------------------- render */
+function render(r, err){
+  const C = document.getElementById("content");
+  document.getElementById("h-title").textContent = `${r.meta.company} — Monthly AV Report`;
+  document.getElementById("h-sub").textContent = new Date(r.meta.generatedAt)
+    .toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"});
+
+  // banner
+  if (err) {
+    C.append($(`<div class="banner err">Couldn't read live data (${err.error}). Showing sample data. Check token and field mapping.</div>`));
+  } else if (r.meta.mode==="sample") {
+    C.append($(`<div class="banner sample noprint"><b>Sample data.</b> Add <code>SC_API_TOKEN</code> in Render Environment to see your real figures.</div>`));
+  } else {
+    const cn = r.meta.connection||{};
+    C.append($(`<div class="banner live noprint">
+      <b>Live.</b> ${cn.actionsPulled||0} actions · ${cn.inspectionsPulled||0} inspections pulled.
+      Tags found: ${(cn.tagsFound||[]).join(", ")||"— (check tag field mapping)"}.
+    </div>`));
+  }
+
+  // ---- Section 1: Management Summary
+  const k = r.kpis;
+  const sum = $(`<div class="card">
+    <div class="secttl"><span class="n">1</span><h2>Management Summary</h2></div>
+    <div class="grid g4" id="kpiGrid"></div>
+  </div>`);
+
+  // Build the four KPI cards
+  const grid = sum.querySelector("#kpiGrid");
+
+  // Logged this month
+  const cLogged = $(`<div class="kpi clickable">
+    <div class="lab">Logged this month</div>
+    <div class="val">${k.loggedThisMonth}</div>
+    <div class="hint">Click to see cases</div>
+  </div>`);
+  cLogged.addEventListener("click", () =>
+    showModal(`Cases logged this month (${k.loggedThisMonth})`, loggedCasesTable(r.loggedThisMonthCases||[]))
+  );
+  grid.append(cLogged);
+
+  // Closed this month
+  const cClosed = $(`<div class="kpi clickable">
+    <div class="lab">Closed this month</div>
+    <div class="val">${k.closedThisMonth}</div>
+    <div class="hint">Click to see cases</div>
+  </div>`);
+  cClosed.addEventListener("click", () =>
+    showModal(`Cases closed this month (${k.closedThisMonth})`, closedCasesTable(r.closedThisMonthCases||[]))
+  );
+  grid.append(cClosed);
+
+  // Open now
+  const cOpen = $(`<div class="kpi clickable">
+    <div class="lab">Open now</div>
+    <div class="val" style="color:${k.openNow ? WARN : BLUE}">${k.openNow}</div>
+    <div class="hint">Click to see cases</div>
+  </div>`);
+  cOpen.addEventListener("click", () =>
+    showModal(`Open cases (${k.openNow})`, openCasesTable(r.openCases||[]))
+  );
+  grid.append(cOpen);
+
+  // Phone enquiries (not clickable yet — no list behind it)
+  grid.append($(`<div class="kpi">
+    <div class="lab">Phone enquiries</div>
+    <div class="val">${k.phoneCalls}</div>
+  </div>`));
+
+  // breach warning
+  if (r.breaches > 0) {
+    sum.append($(`<div class="breach">⚠ ${r.breaches} Room Down case(s) open beyond the ${r.targets["Room Down"]}h target — needs attention.</div>`));
+  }
+  sum.append($(`<div style="margin-top:16px"><canvas id="cTrend"></canvas></div>`));
+  C.append(sum);
+
+  // ---- Section 2: SLA Performance
+  const sla = $(`<div class="card">
+    <div class="secttl"><span class="n">2</span><h2>SLA Performance</h2></div>
+    <div class="grid g3" id="slaCards"></div>
+    <div style="margin-top:16px"><canvas id="cSla"></canvas></div>
+  </div>`);
+  C.append(sla);
+  r.slaByCategory.forEach(s => {
+    const col = s.within ? GOOD : BAD;
+    const pct = Math.min(100, (s.avg / s.target) * 100);
+    sla.querySelector("#slaCards").append($(`<div class="sla">
+      <div class="top"><b>${s.fault}</b>
+        <span class="tag" style="background:${col}22;color:${col}">${s.within?"Within target":"Over target"}</span>
+      </div>
+      <div style="font-size:26px;font-weight:800;margin-top:8px">
+        ${s.avg}h <span style="font-size:12px;color:#6b6b78;font-weight:500">target ${s.target}h</span>
+      </div>
+      <div class="bar"><i style="width:${pct}%;background:${col}"></i></div>
+    </div>`));
+  });
+
+  // ---- Section 3: Closed Analysis
+  C.append($(`<div class="card">
+    <div class="secttl"><span class="n">3</span><h2>Closed Cases Analysis</h2></div>
+    <div class="grid g2">
+      <div><div class="muted">Top rooms by volume</div><canvas id="cRooms"></canvas></div>
+      <div><div class="muted">By resolution type</div><canvas id="cRes"></canvas></div>
+    </div>
+  </div>`));
+
+  // ---- Section 4: Service Calls
+  C.append($(`<div class="card">
+    <div class="secttl"><span class="n">4</span><h2>Service Calls</h2></div>
+    <div class="grid g2">
+      <div class="kpi"><div class="lab">This month</div><div class="val">${r.serviceCalls.month}</div></div>
+      <div class="kpi"><div class="lab">Last 6 months</div><div class="val">${r.serviceCalls.sixMonth}</div></div>
+    </div>
+  </div>`));
+
+  // ---- Section 5: HCV
+  const hcv = r.hcv;
+  const hCard = $(`<div class="card">
+    <div class="secttl"><span class="n">5</span><h2>Health Check Visits</h2></div>
+    <div class="grid g4">
+      <div class="kpi"><div class="lab">Scheduled (yr)</div><div class="val">${hcv.scheduled}</div></div>
+      <div class="kpi"><div class="lab">Completed</div><div class="val" style="color:${GOOD}">${hcv.completed}</div></div>
+      <div class="kpi"><div class="lab">In progress</div><div class="val" style="color:${BLUE}">${hcv.inProgress}</div></div>
+      <div class="kpi"><div class="lab">Outstanding</div><div class="val" style="color:${WARN}">${hcv.outstanding}</div></div>
+    </div>
+    <table style="margin-top:16px">
+      <thead><tr><th>Ref</th><th>Room</th><th>Status</th><th>Scheduled</th><th>Completed</th></tr></thead>
+      <tbody id="hcvBody"></tbody>
+    </table>
+  </div>`);
+  C.append(hCard);
+  (hcv.rows||[]).forEach(row => {
+    const col = row.status==="Completed" ? GOOD : row.status==="In Progress" ? BLUE : WARN;
+    hCard.querySelector("#hcvBody").append($(`<tr>
+      <td>${row.ref||"—"}</td><td>${row.room}</td>
+      <td><span class="tag" style="background:${col}22;color:${col}">${row.status}</span></td>
+      <td>${fmt(row.scheduled)}</td><td>${fmt(row.completed)}</td>
+    </tr>`));
+  });
+
+  // ---- Section 6: Improvements
+  if (r.improvements && r.improvements.length) {
+    const im = $(`<div class="card">
+      <div class="secttl"><span class="n">6</span><h2>Service Improvement Actions</h2></div>
+      <table><thead><tr><th>Action</th><th>Owner</th><th>Priority</th><th>Status</th><th>Next steps</th></tr></thead>
+      <tbody id="imBody"></tbody></table>
+    </div>`);
+    C.append(im);
+    r.improvements.forEach(a => {
+      const col = a.status==="Completed" ? GOOD : a.status==="In Progress" ? BLUE : WARN;
+      im.querySelector("#imBody").append($(`<tr>
+        <td>${a.desc}</td><td>${a.owner}</td><td>${a.priority}</td>
+        <td><span class="tag" style="background:${col}22;color:${col}">${a.status}</span></td>
+        <td>${a.next||"—"}</td>
+      </tr>`));
+    });
+  }
+
+  drawCharts(r);
+}
+
+/* ---------------------------------------------------------------- helpers */
+function fmt(d){ return d ? new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"2-digit"}) : "—"; }
+
+function drawCharts(r){
+  const labels = r.meta.monthsLabels;
+  new Chart(document.getElementById("cTrend"),{type:"line",data:{labels,datasets:[
+    {label:"Logged",data:r.trendLoggedClosed.map(x=>x.logged),borderColor:PURPLE2,tension:.3},
+    {label:"Closed",data:r.trendLoggedClosed.map(x=>x.closed),borderColor:BLUE,tension:.3}]},
+    options:{plugins:{title:{display:true,text:"Cases logged vs closed (6 months)"}}}});
+
+  new Chart(document.getElementById("cSla"),{type:"line",data:{labels,datasets:FAULTS.map(f=>({
+    label:f,data:r.slaTrend.map(x=>x[f]),borderColor:FAULTCOL[f],tension:.3,spanGaps:true}))},
+    options:{plugins:{title:{display:true,text:"Avg resolution time per category (hrs)"}}}});
+
+  new Chart(document.getElementById("cRooms"),{type:"bar",data:{
+    labels:r.topRooms.map(x=>x.name),
+    datasets:[{data:r.topRooms.map(x=>x.value),backgroundColor:PURPLE2}]},
+    options:{indexAxis:"y",plugins:{legend:{display:false}}}});
+
+  new Chart(document.getElementById("cRes"),{type:"doughnut",data:{
+    labels:r.byResolution.map(x=>x.name),
+    datasets:[{data:r.byResolution.map(x=>x.value),
+      backgroundColor:[PURPLE,PURPLE2,BLUE,"#9b8fd1","#c2b8e8","#7fa8d9","#b9d4ef"]}]},
+    options:{plugins:{legend:{position:"right",labels:{font:{size:10}}}}}});
+}
+
+go();
+</script>
+</body>
+</html>
