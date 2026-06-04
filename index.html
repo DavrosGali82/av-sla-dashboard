@@ -285,7 +285,7 @@ function buildSLA(){
     <div><div style="font-size:12px;color:var(--grey)">Email response</div><div style="font-size:22px;font-weight:800">${R.responseTargets?.email||4}h</div></div>
     <div><div style="font-size:12px;color:var(--grey)">Telephone response</div><div style="font-size:22px;font-weight:800">${R.responseTargets?.telephone||1}h</div></div>
     <div><div style="font-size:12px;color:var(--grey)">HC report turnaround</div><div style="font-size:22px;font-weight:800">5 days</div></div>
-    <div><div style="font-size:12px;color:var(--grey)">Call-outs per office/yr</div><div style="font-size:22px;font-weight:800">${R.callOutAllocation}</div></div>
+    <div><div style="font-size:12px;color:var(--grey)">Call-outs total/yr (estate)</div><div style="font-size:22px;font-weight:800">${R.callOutAllocationTotal||29}</div></div>
     <div><div style="font-size:12px;color:var(--grey)">Partial Fault target</div><div style="font-size:22px;font-weight:800">${R.targets["Partial Fault"]}h</div></div>
   </div>`;
   pg.append(ref);

@@ -22,8 +22,28 @@ const CONFIG = {
   },
 
   responseTargets: { email: 4, telephone: 1, hcReport: 120 },
-  callOutAllocation: 28,
   visitsPerOfficePerYear: 2,
+
+  // Per-office call-out allocations (SLA TECHPR-0510)
+  callOutAllocation: {
+    Birmingham:     2,
+    Bristol:        2,
+    Cambridge:      2,
+    Cardiff:        1,
+    Colchester:     1,
+    Edinburgh:      2,
+    Gatwick:        2,
+    Glasgow:        2,
+    Leeds:          2,
+    Leicester:      1,
+    Liverpool:      2,
+    Manchester:     2,
+    "Milton Keynes":2,
+    Oxford:         1,
+    Reading:        2,
+    Sheffield:      2,
+    Southampton:    1,
+  },
 
   offices: [
     "Birmingham","Bristol","Cambridge","Cardiff","Colchester",
@@ -54,10 +74,13 @@ const CONFIG = {
   officeHCVTemplateId:   "template_a68b6c7b138e438f89c8706ff3b7ea37",
 };
 
+// Total call-out allocation across all offices
+const TOTAL_CALLOUT_ALLOC = Object.values(CONFIG.callOutAllocation).reduce((a,b)=>a+b,0);
+
 /* ---------------------------------------------------------------- utils */
 const hrsB  = (a, b) => (new Date(b) - new Date(a)) / 36e5;
 const mKey  = (d) => { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}`; };
-const FAULTS     = ["Room Down","Partial Fault","Routine"];
+const FAULTS      = ["Room Down","Partial Fault","Routine"];
 const RESOLUTIONS = ["Re-Cabling","Re-Configuration","Hardware Replacement","No Fault Found","HCV Completed","Consumable","Referred to Projects"];
 const now = () => new Date();
 
@@ -124,7 +147,6 @@ async function pullFeed(feedPath) {
   return rows;
 }
 
-// Fetch full inspection details to read question responses
 async function fetchInspectionDetails(inspectionId) {
   try {
     const res = await fetch(
@@ -136,57 +158,81 @@ async function fetchInspectionDetails(inspectionId) {
   } catch { return null; }
 }
 
-// Read a response value from inspection details by matching question label
-// SC details items can be nested; we walk the whole tree
+/* ----------------------------------------------------------------
+   SC inspection details helpers
+   The details response structure is: details.inspection.items
+   Each item has a type-specific response field:
+     datetime  → item.datetime_item.datetime
+     text      → item.text_item.text
+     textsingle→ item.text_item.text
+     list      → item.list_items.responses[0].value
+   ---------------------------------------------------------------- */
+function getInspectionItems(details) {
+  return details?.inspection?.items
+    || details?.items
+    || details?.audit?.items
+    || details?.pages?.flatMap(p=>p.items||[])
+    || [];
+}
+
+function extractItemValue(item) {
+  if (!item) return null;
+  // SC typed response fields (new API structure)
+  if (item.datetime_item?.datetime) return item.datetime_item.datetime;
+  if (item.text_item?.text)         return item.text_item.text;
+  if (item.list_items?.responses?.length)
+    return item.list_items.responses[0].value || null;
+  // Fallback for older structure
+  const r = item.responses || item.response || {};
+  if (r.datetime) return r.datetime;
+  if (r.date)     return r.date;
+  if (Array.isArray(r.selected) && r.selected.length)
+    return r.selected[0]?.label || String(r.selected[0]);
+  if (r.selected?.label) return r.selected.label;
+  if (r.text)            return r.text;
+  if (r.value != null)   return String(r.value);
+  return null;
+}
+
 function getFieldResponse(details, labelKeyword) {
   if (!details) return null;
   const keyword = labelKeyword.toLowerCase();
-
   function walk(items) {
     if (!Array.isArray(items)) return null;
     for (const item of items) {
       const label = (item.label || item.item?.label || "").toLowerCase();
-      if (label.includes(keyword)) {
-        const r = item.responses || item.response || {};
-        // Date/datetime fields
-        if (r.datetime) return r.datetime;
-        if (r.date)     return r.date;
-        // Dropdown / multiple choice
-        if (Array.isArray(r.selected) && r.selected.length)
-          return r.selected[0]?.label || String(r.selected[0]);
-        if (r.selected?.label) return r.selected.label;
-        // Text / number
-        if (r.text)  return r.text;
-        if (r.value != null) return String(r.value);
-      }
-      // Recurse into child items
+      if (label.includes(keyword)) return extractItemValue(item);
       const found = walk(item.items || item.children || []);
       if (found) return found;
     }
     return null;
   }
-
-  const items = details.items || details.audit?.items || details.pages?.flatMap(p=>p.items||[]) || [];
-  return walk(items);
+  return walk(getInspectionItems(details));
 }
 
-/* ---------------------------------------------------------------- live */
-       // collect all field labels for debugging
 function getAllFieldLabels(details) {
   if (!details) return [];
   const labels = [];
   function walk(items) {
     if (!Array.isArray(items)) return;
     items.forEach(item => {
-      const lbl = item.label || item.item?.label;
-      if (lbl) labels.push(lbl);
+      if (item.label) labels.push(item.label);
       walk(item.items || item.children || []);
     });
   }
-  const items = details.items || details.audit?.items || details.pages?.flatMap(p=>p.items||[]) || [];
-  walk(items);
+  walk(getInspectionItems(details));
   return labels;
 }
+
+/* ---------------------------------------------------------------- year filter helper */
+const thisYearStart = () => new Date(new Date().getFullYear(), 0, 1);
+
+function isThisYear(inspection) {
+  const d = new Date(pick(inspection,["created_at","date_started","date_completed"])||0);
+  return d >= thisYearStart();
+}
+
+/* ---------------------------------------------------------------- live */
 async function buildLiveReport() {
   const [actions, inspections, sites] = await Promise.all([
     pullFeed("/feed/actions"),
@@ -200,7 +246,7 @@ async function buildLiveReport() {
   const diag = { prioritiesFound:new Set(), statusesFound:new Set(), tagsFound:new Set(), templatesFound:new Set() };
   const start = new Date(CONFIG.reportStartDate);
 
-  // ── Cases from actions
+  // ── Cases
   const cases = actions
     .filter(a => { const c=pick(a,["created_at","created"]); return c && new Date(c)>=start; })
     .map(a => {
@@ -225,7 +271,7 @@ async function buildLiveReport() {
 
   inspections.forEach(i=>{ const t=pick(i,["template_id","templateId"]); if(t) diag.templatesFound.add(t); });
 
-  // ── Room-level HCV (existing template — detailed inspection records)
+  // ── Room-level HCV
   const hcvRows = inspections
     .filter(i=>pick(i,["template_id","templateId"])===CONFIG.healthCheckTemplateId)
     .filter(i=>{ const d=new Date(pick(i,["date_completed","completed_at","date_started","created_at"])); return d>=start; })
@@ -238,15 +284,11 @@ async function buildLiveReport() {
       notes:"",
     }));
 
-  // ── Office HCV summary (new template — one record per office visit)
+  // ── Office HCV summary — current year only
   const officeHCVInspections = inspections
-  .filter(i=>pick(i,["template_id","templateId"])===CONFIG.officeHCVTemplateId)
-  .filter(i=>{
-    const d = new Date(pick(i,["created_at","date_started","date_completed"])||0);
-    return d >= new Date(new Date().getFullYear(), 0, 1); // current year only
-  });
+    .filter(i=>pick(i,["template_id","templateId"])===CONFIG.officeHCVTemplateId)
+    .filter(isThisYear);
 
-  // Fetch full details for each so we can read the Scheduled Date field
   const officeHCVRaw = await Promise.all(
     officeHCVInspections.map(async i => {
       const id      = String(pick(i,["audit_id","inspection_id","id"])||"");
@@ -255,55 +297,49 @@ async function buildLiveReport() {
       const siteLbl = siteName[siteId]||"—";
       const office  = matchOffice(siteLbl);
 
-
-      // Read question responses
       const scheduledRaw = getFieldResponse(details, "scheduled");
       const visitNumRaw  = getFieldResponse(details, "visit");
-      const outcome      = getFieldResponse(details, "outcome") || getFieldResponse(details, "overall") || "—";
+      const outcome      = getFieldResponse(details, "outcome") || getFieldResponse(details, "overall") || getFieldResponse(details, "general state") || "—";
 
-      const completed   = pick(i,["date_completed","completed_at"]);
-      const isCompleted = !!completed;
+      const completed     = pick(i,["date_completed","completed_at"]);
+      const isCompleted   = !!completed;
       const scheduledDate = scheduledRaw ? new Date(scheduledRaw) : null;
 
-      // Status logic:
-      // Completed  — has a completion date
-      // Overdue    — no completion, scheduled date has passed
-      // Booked     — no completion, scheduled date is in the future
-      // In progress— no completion, no scheduled date (inspection started but not dated)
       let status;
-      if      (isCompleted)                              status = "Completed";
-      else if (scheduledDate && scheduledDate < now())   status = "Overdue";
-      else if (scheduledDate && scheduledDate >= now())  status = "Booked";
-      else                                               status = "In Progress";
+      if      (isCompleted)                             status = "Completed";
+      else if (scheduledDate && scheduledDate < now())  status = "Overdue";
+      else if (scheduledDate && scheduledDate >= now()) status = "Booked";
+      else                                              status = "In Progress";
 
-      const visitNum = visitNumRaw && visitNumRaw.includes("2") ? 2 : 1;
+      const visitNum = visitNumRaw && String(visitNumRaw).includes("2") ? 2 : 1;
 
-      return { id, office, visitNum, status, scheduled:scheduledRaw||null, completed:completed||null, outcome, siteName:siteLbl, _debugFields: getAllFieldLabels(details) };
+      return { id, office, visitNum, status,
+               scheduled:scheduledRaw||null, completed:completed||null, outcome,
+               siteName:siteLbl, _debugFields:getAllFieldLabels(details) };
     })
   );
 
-  // Build per-office summary — one row per office, two visit slots each
+  // Per-office summary
   const officeHCVSummary = CONFIG.offices.map(o => {
     const visits = officeHCVRaw.filter(h=>h.office===o);
     const v1 = visits.find(h=>h.visitNum===1) || null;
     const v2 = visits.find(h=>h.visitNum===2) || null;
-    return {
-      office: o,
-      visit1: v1 ? { status:v1.status, scheduled:v1.scheduled, completed:v1.completed, outcome:v1.outcome } : { status:"Not scheduled", scheduled:null, completed:null, outcome:null },
-      visit2: v2 ? { status:v2.status, scheduled:v2.scheduled, completed:v2.completed, outcome:v2.outcome } : { status:"Not scheduled", scheduled:null, completed:null, outcome:null },
-    };
+    const mkSlot = (v) => v
+      ? { status:v.status, scheduled:v.scheduled, completed:v.completed, outcome:v.outcome }
+      : { status:"Not scheduled", scheduled:null, completed:null, outcome:null };
+    return { office:o, visit1:mkSlot(v1), visit2:mkSlot(v2) };
   });
 
   const report = computeMetrics(cases, hcvRows, officeHCVSummary);
   report.meta.mode = "live";
   report.meta.connection = {
-    actionsPulled:     actions.length,
-    inspectionsPulled: inspections.length,
-    officeHCVPulled:   officeHCVInspections.length,
-    prioritiesFound:   [...diag.prioritiesFound],
-    statusesFound:     [...diag.statusesFound],
-    tagsFound:         [...diag.tagsFound].slice(0,20),
-    templatesFound:    [...diag.templatesFound].slice(0,10),
+    actionsPulled:        actions.length,
+    inspectionsPulled:    inspections.length,
+    officeHCVPulled:      officeHCVInspections.length,
+    prioritiesFound:      [...diag.prioritiesFound],
+    statusesFound:        [...diag.statusesFound],
+    tagsFound:            [...diag.tagsFound].slice(0,20),
+    templatesFound:       [...diag.templatesFound].slice(0,10),
     officeHCVFieldLabels: officeHCVRaw.slice(0,1).map(h=>h._debugFields).flat(),
   };
   return report;
@@ -347,22 +383,24 @@ function computeMetrics(cases, hcvRows, officeHCVSummary = []) {
 
   const roomCount = {};
   closed.forEach(c=>{ roomCount[c.room]=(roomCount[c.room]||0)+1; });
-  const topRooms      = Object.entries(roomCount).sort((a,b)=>b[1]-a[1]).slice(0,7).map(([name,value])=>({name,value}));
-  const topRoomNames  = topRooms.slice(0,5).map(r=>r.name);
-  const roomTrend     = months.map(m=>{ const row={month:m.label}; topRoomNames.forEach(r=>{ row[r]=closed.filter(c=>c.room===r&&mKey(c.closed)===m.key).length; }); return row; });
+  const topRooms     = Object.entries(roomCount).sort((a,b)=>b[1]-a[1]).slice(0,7).map(([name,value])=>({name,value}));
+  const topRoomNames = topRooms.slice(0,5).map(r=>r.name);
+  const roomTrend    = months.map(m=>{ const row={month:m.label}; topRoomNames.forEach(r=>{ row[r]=closed.filter(c=>c.room===r&&mKey(c.closed)===m.key).length; }); return row; });
 
   const resCount = {};
   closed.forEach(c=>{ const r=c.resolution||"Not recorded"; resCount[r]=(resCount[r]||0)+1; });
-  const byResolution  = Object.entries(resCount).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value}));
-  const topResNames   = byResolution.slice(0,5).map(r=>r.name);
-  const resTrend      = months.map(m=>{ const row={month:m.label}; topResNames.forEach(r=>{ row[r]=closed.filter(c=>(c.resolution||"Not recorded")===r&&mKey(c.closed)===m.key).length; }); return row; });
+  const byResolution = Object.entries(resCount).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value}));
+  const topResNames  = byResolution.slice(0,5).map(r=>r.name);
+  const resTrend     = months.map(m=>{ const row={month:m.label}; topResNames.forEach(r=>{ row[r]=closed.filter(c=>(c.resolution||"Not recorded")===r&&mKey(c.closed)===m.key).length; }); return row; });
 
+  // Per-office call-out allocation tracking
   const officeUsage = {};
   cases.forEach(c=>{ officeUsage[c.office]=(officeUsage[c.office]||0)+1; });
   const allOffices = new Set([...CONFIG.offices,...Object.keys(officeUsage)]);
   const officeAllocations = [...allOffices].map(o=>{
-    const used=officeUsage[o]||0, alloc=CONFIG.callOutAllocation;
-    const pct=+(used/alloc*100).toFixed(1);
+    const used  = officeUsage[o]||0;
+    const alloc = CONFIG.callOutAllocation[o] || 1;
+    const pct   = +(used/alloc*100).toFixed(1);
     return { office:o, alloc, used, remaining:alloc-used, pct, rag:pct>=90?"red":pct>=60?"amber":"green" };
   }).sort((a,b)=>b.pct-a.pct);
 
@@ -375,7 +413,7 @@ function computeMetrics(cases, hcvRows, officeHCVSummary = []) {
   FAULTS.forEach(f=>{ openByCategory[f]=open.filter(c=>c.fault===f).length; });
   const roomDownBreaches = open.filter(c=>c.fault==="Room Down"&&hrsB(c.created,now())>t["Room Down"]).length;
 
-  // Office HCV headline counts
+  // Office HCV counts
   const expectedTotal   = CONFIG.offices.length * CONFIG.visitsPerOfficePerYear;
   const allVisitSlots   = officeHCVSummary.flatMap(o=>[o.visit1,o.visit2]);
   const hcvCompleted    = allVisitSlots.filter(v=>v.status==="Completed").length;
@@ -386,32 +424,23 @@ function computeMetrics(cases, hcvRows, officeHCVSummary = []) {
   return {
     meta:{ mode:"sample", generatedAt:now().toISOString(), company:CONFIG.companyName,
            monthsLabels:months.map(m=>m.label), slaRef:"TECHPR-0510" },
-    targets:t, responseTargets:CONFIG.responseTargets, callOutAllocation:CONFIG.callOutAllocation,
+    targets:t, responseTargets:CONFIG.responseTargets,
+    callOutAllocationTotal: TOTAL_CALLOUT_ALLOC,
     kpis:{ loggedThisMonth:curCases.length, closedThisMonth:curClosed.length, openNow:open.length, roomDownBreaches },
     openByCategory, roomDownBreaches,
     trendLoggedClosed, slaByCategory, slaTrend, breachedCases,
     topRooms, topRoomNames, roomTrend, byResolution, topResNames, resTrend,
     serviceCalls:{ month:curCases.length, sixMonth:cases.length,
       trend:months.map(m=>({ month:m.label, visits:cases.filter(c=>mKey(c.created)===m.key).length })) },
-    hcv:{ // room-level detail (existing template)
-      scheduled:hcvRows.length, completed:hcvRows.filter(h=>h.status==="Completed").length,
-      inProgress:hcvRows.filter(h=>h.status==="In Progress").length,
-      outstanding:hcvRows.filter(h=>h.status==="Scheduled").length,
-      rows:hcvRows.slice(0,15),
-    },
-    officeHCV:{ // office-level summary (new template)
-      expected:     expectedTotal,
-      completed:    hcvCompleted,
-      booked:       hcvBooked,
-      overdue:      hcvOverdue,
-      notScheduled: hcvNotScheduled,
-      summary:      officeHCVSummary,
-    },
+    hcv:{ scheduled:hcvRows.length, completed:hcvRows.filter(h=>h.status==="Completed").length,
+          inProgress:hcvRows.filter(h=>h.status==="In Progress").length,
+          outstanding:hcvRows.filter(h=>h.status==="Scheduled").length, rows:hcvRows.slice(0,15) },
+    officeHCV:{ expected:expectedTotal, completed:hcvCompleted, booked:hcvBooked,
+                overdue:hcvOverdue, notScheduled:hcvNotScheduled, summary:officeHCVSummary },
     officeAllocations,
     loggedThisMonthCases: curCases.map(c=>({title:c.title,fault:c.fault,room:c.room,created:c.created,status:c.status})),
     closedThisMonthCases: curClosed.map(c=>({title:c.title,fault:c.fault,room:c.room,closed:c.closed,resolution:c.resolution})),
-    openCases,
-    improvements:[],
+    openCases, improvements:[],
   };
 }
 
@@ -446,12 +475,11 @@ function buildSampleReport() {
   });
 
   const hcvRows = [
-    {ref:"HCV-001",room:"Event Rooms (Leeds)",      status:"Completed",  scheduled:"2025-09-15",completed:"2025-12-19",notes:""},
-    {ref:"HCV-002",room:"Event Rooms (London)",     status:"In Progress",scheduled:"2025-11-01",completed:null,        notes:"Booked 09/03"},
-    {ref:"HCV-003",room:"Rooms (Manchester)",       status:"In Progress",scheduled:"2026-01-01",completed:null,        notes:"Booked 13/03"},
+    {ref:"HCV-001",room:"Event Rooms (Leeds)",    status:"Completed",  scheduled:"2025-09-15",completed:"2025-12-19",notes:""},
+    {ref:"HCV-002",room:"Event Rooms (London)",   status:"In Progress",scheduled:"2025-11-01",completed:null,        notes:"Booked 09/03"},
+    {ref:"HCV-003",room:"Rooms (Manchester)",     status:"In Progress",scheduled:"2026-01-01",completed:null,        notes:"Booked 13/03"},
   ];
 
-  // Sample office HCV summary — shows a mix of statuses for the demo
   const sampleStatuses = [
     ["Completed","Booked"],["Booked","Not scheduled"],["Not scheduled","Not scheduled"],
     ["Completed","Completed"],["Overdue","Not scheduled"],["Booked","Not scheduled"],
@@ -460,16 +488,15 @@ function buildSampleReport() {
     ["Not scheduled","Not scheduled"],["Booked","Not scheduled"],["Completed","Booked"],
     ["Overdue","Not scheduled"],["Not scheduled","Not scheduled"],
   ];
-  const mkDate = (daysFromNow) => new Date(now().getTime()+daysFromNow*864e5).toISOString();
+  const mkDate = (d) => new Date(now().getTime()+d*864e5).toISOString();
   const officeHCVSummary = CONFIG.offices.map((o,i)=>{
     const [s1,s2] = sampleStatuses[i]||["Not scheduled","Not scheduled"];
-    const mkVisit = (s) => ({
-      status:s,
-      scheduled: s==="Not scheduled"?null: s==="Completed"?mkDate(-60): s==="Overdue"?mkDate(-5):mkDate(30),
+    const mkV = s => ({
+      status:s, outcome: s==="Completed"?(i%3===0?"Minor Issues":"All Good"):null,
+      scheduled: s==="Not scheduled"?null:s==="Completed"?mkDate(-60):s==="Overdue"?mkDate(-5):mkDate(30),
       completed: s==="Completed"?mkDate(-45):null,
-      outcome:   s==="Completed"?(i%3===0?"Minor Issues":"All Good"):null,
     });
-    return { office:o, visit1:mkVisit(s1), visit2:mkVisit(s2) };
+    return { office:o, visit1:mkV(s1), visit2:mkV(s2) };
   });
 
   const report = computeMetrics(cases, hcvRows, officeHCVSummary);
@@ -484,18 +511,6 @@ function buildSampleReport() {
 }
 
 /* ---------------------------------------------------------------- routes */
-app.get("/api/debug-hcv", async (req,res)=>{
-  try {
-    const inspections = await pullFeed("/feed/inspections");
-    const match = inspections.find(i=>pick(i,["template_id","templateId"])===CONFIG.officeHCVTemplateId);
-    if (!match) return res.json({error:"No office HCV inspections found"});
-    const id = String(pick(match,["audit_id","inspection_id","id"])||"");
-    const details = await fetchInspectionDetails(id);
-    res.json({ inspectionId:id, feedRecord:match, details });
-  } catch(err) {
-    res.json({error:err.message});
-  }
-});
 app.get("/api/report", async (req,res)=>{
   try {
     if (!SC_TOKEN) return res.json(buildSampleReport());
@@ -503,6 +518,35 @@ app.get("/api/report", async (req,res)=>{
   } catch(err) {
     console.error(err);
     res.json({ error:err.message, fallback:buildSampleReport() });
+  }
+});
+
+// Debug endpoint — shows the first office HCV inspection from THIS year
+// with its full details so we can see the exact field names and values
+app.get("/api/debug-hcv", async (req,res)=>{
+  try {
+    const inspections = await pullFeed("/feed/inspections");
+    const thisYear = inspections
+      .filter(i=>pick(i,["template_id","templateId"])===CONFIG.officeHCVTemplateId)
+      .filter(isThisYear);
+
+    if (!thisYear.length) {
+      const total = inspections.filter(i=>pick(i,["template_id","templateId"])===CONFIG.officeHCVTemplateId).length;
+      return res.json({ error:`No office HCV inspections found in ${now().getFullYear()}`, totalAllTime:total });
+    }
+
+    const match = thisYear[0];
+    const id    = String(pick(match,["audit_id","inspection_id","id"])||"");
+    const details = await fetchInspectionDetails(id);
+    res.json({
+      inspectionId: id,
+      totalThisYear: thisYear.length,
+      feedRecord: match,
+      fieldLabels: getAllFieldLabels(details),
+      details,
+    });
+  } catch(err) {
+    res.json({ error:err.message });
   }
 });
 
