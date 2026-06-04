@@ -495,22 +495,139 @@ function buildHCV(){
 }
 
 /* ── 6. IMPROVEMENTS */
+const SC_IMP={Open:WARN,"In Progress":BLUE,Completed:GOOD,"On Hold":"#8a8a8a"};
+const PC_IMP={High:BAD,Medium:WARN,Low:BLUE};
+let editingId=null;
+
 function buildImprove(){
   const pg=document.getElementById("pg-improve"); pg.innerHTML="";
-  const sc={Open:WARN,"In Progress":BLUE,Completed:GOOD,"On Hold":"#8a8a8a"};
-  const pc={High:BAD,Medium:WARN,Low:BLUE};
 
-  const tbl=el("div","card gap");
-  tbl.innerHTML=`<div class="card-title">Service improvement action tracker</div>
-  <table><thead><tr><th>Action</th><th>Category</th><th>Owner</th><th>Priority</th><th>Status</th><th>Target</th><th>Progress</th><th>Next steps</th></tr></thead>
-  <tbody>${(R.improvements||[]).map(a=>`<tr>
-    <td><b>${a.desc}</b></td><td style="color:var(--grey)">${a.category||""}</td><td>${a.owner}</td>
-    <td>${pill(a.priority,pc[a.priority]||BLUE)}</td>
-    <td>${pill(a.status,sc[a.status]||WARN)}</td>
-    <td>${fmt(a.target)}</td><td style="color:var(--grey)">${a.progress||"—"}</td><td>${a.next||"—"}</td>
-  </tr>`).join("")}</tbody></table>
-  <p style="font-size:12px;color:#bbb;margin-top:12px">Edit improvement actions in server.js → buildSampleReport() until the editable panel is added.</p>`;
+  // Add button
+  const addBtn=el("div","gap");
+  addBtn.innerHTML=`<button onclick="showImpForm(null)" style="background:var(--p);color:#fff;border:none;border-radius:8px;padding:9px 16px;font-weight:700;font-size:13px;cursor:pointer">+ Add action</button>
+  <span style="font-size:12px;color:var(--grey);margin-left:10px">Changes save automatically · commit data/improvements.json to GitHub before redeploying to preserve edits</span>`;
+  pg.append(addBtn);
+
+  // Form (hidden by default)
+  const formCard=el("div","card gap"); formCard.id="imp-form"; formCard.style.display="none";
+  formCard.innerHTML=`<div class="card-title" id="imp-form-title">Add improvement action</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    <label style="display:block"><span style="font-size:11px;font-weight:600;color:var(--grey)">Description</span><input id="if-desc" style="width:100%;margin-top:4px;border:1px solid #ddd;border-radius:8px;padding:8px;font-size:13px" placeholder="What needs to be done?"/></label>
+    <label style="display:block"><span style="font-size:11px;font-weight:600;color:var(--grey)">Category</span>
+      <select id="if-cat" style="width:100%;margin-top:4px;border:1px solid #ddd;border-radius:8px;padding:8px;font-size:13px">
+        <option>Process</option><option>Asset Management</option><option>Reporting</option><option>Engineering</option><option>Other</option>
+      </select></label>
+    <label style="display:block"><span style="font-size:11px;font-weight:600;color:var(--grey)">Owner</span><input id="if-owner" style="width:100%;margin-top:4px;border:1px solid #ddd;border-radius:8px;padding:8px;font-size:13px" placeholder="Name"/></label>
+    <label style="display:block"><span style="font-size:11px;font-weight:600;color:var(--grey)">Priority</span>
+      <select id="if-priority" style="width:100%;margin-top:4px;border:1px solid #ddd;border-radius:8px;padding:8px;font-size:13px">
+        <option>High</option><option>Medium</option><option>Low</option>
+      </select></label>
+    <label style="display:block"><span style="font-size:11px;font-weight:600;color:var(--grey)">Status</span>
+      <select id="if-status" style="width:100%;margin-top:4px;border:1px solid #ddd;border-radius:8px;padding:8px;font-size:13px">
+        <option>Open</option><option>In Progress</option><option>Completed</option><option>On Hold</option>
+      </select></label>
+    <label style="display:block"><span style="font-size:11px;font-weight:600;color:var(--grey)">Target date</span><input id="if-target" type="date" style="width:100%;margin-top:4px;border:1px solid #ddd;border-radius:8px;padding:8px;font-size:13px"/></label>
+    <label style="display:block"><span style="font-size:11px;font-weight:600;color:var(--grey)">Progress</span><input id="if-progress" style="width:100%;margin-top:4px;border:1px solid #ddd;border-radius:8px;padding:8px;font-size:13px" placeholder="What's been done so far?"/></label>
+    <label style="display:block"><span style="font-size:11px;font-weight:600;color:var(--grey)">Next steps</span><input id="if-next" style="width:100%;margin-top:4px;border:1px solid #ddd;border-radius:8px;padding:8px;font-size:13px" placeholder="What happens next?"/></label>
+  </div>
+  <div style="display:flex;gap:8px;margin-top:14px">
+    <button onclick="saveImpForm()" style="background:var(--p);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-weight:700;font-size:13px;cursor:pointer">Save</button>
+    <button onclick="document.getElementById('imp-form').style.display='none'" style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:8px 16px;font-weight:600;font-size:13px;cursor:pointer">Cancel</button>
+  </div>`;
+  pg.append(formCard);
+
+  // Table
+  const tbl=el("div","card gap"); tbl.id="imp-table";
+  renderImpTable(tbl);
   pg.append(tbl);
+}
+
+function renderImpTable(container){
+  if(!container) container=document.getElementById("imp-table");
+  if(!container) return;
+  const items=R.improvements||[];
+  container.innerHTML=`<div class="card-title">Service improvement action tracker (${items.length} actions)</div>
+  <table><thead><tr><th>Action</th><th>Category</th><th>Owner</th><th>Priority</th><th>Status</th><th>Target</th><th>Progress</th><th>Next steps</th><th></th></tr></thead>
+  <tbody>${items.map(a=>`<tr>
+    <td><b>${a.desc}</b></td>
+    <td style="color:var(--grey);font-size:12px">${a.category||""}</td>
+    <td>${a.owner||""}</td>
+    <td>${pill(a.priority,PC_IMP[a.priority]||BLUE)}</td>
+    <td>${pill(a.status,SC_IMP[a.status]||WARN)}</td>
+    <td style="font-size:12px">${a.target||"—"}</td>
+    <td style="color:var(--grey);font-size:12px">${a.progress||"—"}</td>
+    <td style="font-size:12px">${a.next||"—"}</td>
+    <td style="white-space:nowrap">
+      <button onclick="showImpForm('${a.id}')" style="background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer;margin-right:4px">Edit</button>
+      <button onclick="deleteImp('${a.id}')" style="background:none;border:1px solid #fcc;color:${BAD};border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">Delete</button>
+    </td>
+  </tr>`).join("")}</tbody></table>
+  ${items.length===0?"<p style='color:#999;padding:12px'>No improvement actions yet. Click '+ Add action' to create one.</p>":""}`;
+}
+
+function showImpForm(id){
+  editingId=id;
+  const form=document.getElementById("imp-form");
+  const title=document.getElementById("imp-form-title");
+  if(id){
+    const a=(R.improvements||[]).find(x=>x.id===id);
+    if(!a)return;
+    title.textContent="Edit action";
+    document.getElementById("if-desc").value=a.desc||"";
+    document.getElementById("if-cat").value=a.category||"Process";
+    document.getElementById("if-owner").value=a.owner||"";
+    document.getElementById("if-priority").value=a.priority||"Medium";
+    document.getElementById("if-status").value=a.status||"Open";
+    document.getElementById("if-target").value=a.target||"";
+    document.getElementById("if-progress").value=a.progress||"";
+    document.getElementById("if-next").value=a.next||"";
+  } else {
+    title.textContent="Add improvement action";
+    ["if-desc","if-owner","if-progress","if-next"].forEach(id=>document.getElementById(id).value="");
+    document.getElementById("if-priority").value="Medium";
+    document.getElementById("if-status").value="Open";
+    document.getElementById("if-target").value="";
+  }
+  form.style.display="block";
+  form.scrollIntoView({behavior:"smooth",block:"start"});
+}
+
+async function saveImpForm(){
+  const data={
+    desc:     document.getElementById("if-desc").value.trim(),
+    category: document.getElementById("if-cat").value,
+    owner:    document.getElementById("if-owner").value.trim(),
+    priority: document.getElementById("if-priority").value,
+    status:   document.getElementById("if-status").value,
+    target:   document.getElementById("if-target").value,
+    progress: document.getElementById("if-progress").value.trim(),
+    next:     document.getElementById("if-next").value.trim(),
+  };
+  if(!data.desc){ alert("Please add a description."); return; }
+  try {
+    if(editingId){
+      const res=await fetch(`/api/improvements/${editingId}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+      const updated=await res.json();
+      const idx=(R.improvements||[]).findIndex(x=>x.id===editingId);
+      if(idx>=0) R.improvements[idx]=updated;
+    } else {
+      const res=await fetch("/api/improvements",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+      const created=await res.json();
+      if(!R.improvements) R.improvements=[];
+      R.improvements.push(created);
+    }
+    document.getElementById("imp-form").style.display="none";
+    renderImpTable();
+  } catch(e){ alert("Save failed: "+e.message); }
+}
+
+async function deleteImp(id){
+  if(!confirm("Delete this action?")) return;
+  try {
+    await fetch(`/api/improvements/${id}`,{method:"DELETE"});
+    R.improvements=(R.improvements||[]).filter(x=>x.id!==id);
+    renderImpTable();
+  } catch(e){ alert("Delete failed: "+e.message); }
 }
 
 /* ================================================================
