@@ -487,29 +487,14 @@ app.get("/api/report", async (req,res)=>{
   } catch(err) { console.error(err); res.json({error:err.message,fallback:buildSampleReport(m)}); }
 });
 
-app.get("/api/debug-investigation", async (req,res)=>{
-  try { res.json(await scFetch("/investigations/v1/investigations/ea8833e4-82ee-41cc-9ee2-37809530a7c9")); }
-  catch(e){ res.json({error:e.message}); }
-});
-
-app.get("/api/improvements",        (req,res)=>res.json(improvements));
-app.post("/api/improvements",       (req,res)=>{ const item={...req.body,id:"imp-"+Date.now()}; improvements.push(item); saveImprovements(improvements); res.json(item); });
-app.put("/api/improvements/:id",    (req,res)=>{ const idx=improvements.findIndex(i=>i.id===req.params.id); if(idx===-1)return res.status(404).json({error:"Not found"}); improvements[idx]={...improvements[idx],...req.body}; saveImprovements(improvements); res.json(improvements[idx]); });
-app.delete("/api/improvements/:id", (req,res)=>{ improvements=improvements.filter(i=>i.id!==req.params.id); saveImprovements(improvements); res.json({ok:true}); });
-
-app.get("/api/debug-inv-list", async (req,res)=>{
-  try {
-    const j = await scFetch(`/investigations/v1/investigations?categoryId=${CONFIG.investigationCategoryId}`);
-    res.json({ raw: j, keys: Object.keys(j) });
-  } catch(e){ res.json({error:e.message}); }
-});
-
-app.get("/api/debug-inv-probe", async (req,res)=>{
+app.get("/api/debug-probe2", async (req,res)=>{
   const paths = [
-    "/investigations/v1/investigations",
-    "/investigations/v2/investigations", 
-    "/feed/investigations",
-    "/investigation/v1/investigations",
+    "/issues/v1/issues",
+    "/issues/v2/issues",
+    "/feed/issues",
+    "/tasks/v1/tasks",
+    "/feed/tasks",
+    "/feed/actions",
   ];
   const results = {};
   for (const p of paths) {
@@ -519,13 +504,6 @@ app.get("/api/debug-inv-probe", async (req,res)=>{
     } catch(e) { results[p] = { error: e.message }; }
   }
   res.json(results);
-});
-
-app.get("/api/debug-issues", async (req,res)=>{
-  try {
-    const j = await scFetch(`/issues/v1/issues?categoryId=${CONFIG.issueCategoryId}&limit=3`);
-    res.json(j);
-  } catch(e){ res.json({error:e.message}); }
 });
 
 app.use(express.static(path.join(__dirname,"public")));
