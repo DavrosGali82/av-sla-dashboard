@@ -408,7 +408,7 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
   const openCases = open.map(c=>({
     title:c.title, fault:c.fault, room:c.room, office:c.office,
     callReference:c.callReference, created:c.respondedAt,
-    ageHrs:c.occurredAt?businessHoursBetween(c.occurredAt,now().toISOString()):null,
+    ageHours:c.occurredAt?businessHoursBetween(c.occurredAt,now().toISOString()):null,
     warranty:c.warranty||false, clientDelay:c.clientDelay||false,
   }));
 
@@ -540,14 +540,6 @@ app.get("/api/improvements",        (req,res)=>res.json(improvements));
 app.post("/api/improvements",       (req,res)=>{ const item={...req.body,id:"imp-"+Date.now()}; improvements.push(item); saveImprovements(improvements); res.json(item); });
 app.put("/api/improvements/:id",    (req,res)=>{ const idx=improvements.findIndex(i=>i.id===req.params.id); if(idx===-1)return res.status(404).json({error:"Not found"}); improvements[idx]={...improvements[idx],...req.body}; saveImprovements(improvements); res.json(improvements[idx]); });
 app.delete("/api/improvements/:id", (req,res)=>{ improvements=improvements.filter(i=>i.id!==req.params.id); saveImprovements(improvements); res.json({ok:true}); });
-
-app.get("/api/debug-labels", async (req,res)=>{
-  try {
-    const j = await scFetch("/feed/actions?limit=5");
-    const labels = j.data?.map(a=>a.action_label).filter(Boolean);
-    res.json({ rawLabels: labels });
-  } catch(e){ res.json({error:e.message}); }
-});
 
 app.use(express.static(path.join(__dirname,"public")));
 app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
