@@ -604,7 +604,7 @@ app.delete("/api/improvements/:id", (req,res) => {
 app.get("/api/debug-investigation", async (req,res)=>{
   try {
     const res2 = await fetch(
-      "https://api.safetyculture.io/investigations/v1/investigations/investigation_ea8833e4-82ee-41cc-9ee2-37809530a7c9",
+      "https://api.safetyculture.io/investigations/v1/investigations/ea8833e4-82ee-41cc-9ee2-37809530a7c9",
       { headers:{ Authorization:`Bearer ${SC_TOKEN}`, Accept:"application/json" } }
     );
     const data = await res2.json();
