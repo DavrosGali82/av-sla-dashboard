@@ -601,6 +601,18 @@ app.delete("/api/improvements/:id", (req,res) => {
   res.json({ok:true});
 });
 
+app.get("/api/debug-investigation", async (req,res)=>{
+  try {
+    const res2 = await fetch(
+      "https://api.safetyculture.io/investigations/v1/investigations/ea8833e4-82ee-41cc-9ee2-37809530a7c9",
+      { headers:{ Authorization:`Bearer ${SC_TOKEN}`, Accept:"application/json" } }
+    );
+    const data = await res2.json();
+    res2ok: res2.ok;
+    res.json(data);
+  } catch(e){ res.json({error:e.message}); }
+});
+
 app.use(express.static(path.join(__dirname,"public")));
 app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
 
