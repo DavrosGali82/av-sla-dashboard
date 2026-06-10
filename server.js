@@ -487,23 +487,12 @@ app.get("/api/report", async (req,res)=>{
   } catch(err) { console.error(err); res.json({error:err.message,fallback:buildSampleReport(m)}); }
 });
 
-app.get("/api/debug-probe2", async (req,res)=>{
-  const paths = [
-    "/issues/v1/issues",
-    "/issues/v2/issues",
-    "/feed/issues",
-    "/tasks/v1/tasks",
-    "/feed/tasks",
-    "/feed/actions",
-  ];
-  const results = {};
-  for (const p of paths) {
-    try {
-      const r = await fetch(`${SC_BASE}${p}`, { headers:{ Authorization:`Bearer ${SC_TOKEN}`, Accept:"application/json" } });
-      results[p] = { status: r.status, ok: r.ok };
-    } catch(e) { results[p] = { error: e.message }; }
-  }
-  res.json(results);
+app.get("/api/debug-feeds", async (req,res)=>{
+  try {
+    const issues  = await scFetch("/feed/issues?limit=2");
+    const actions = await scFetch("/feed/actions?limit=2");
+    res.json({ issues, actions });
+  } catch(e){ res.json({error:e.message}); }
 });
 
 app.use(express.static(path.join(__dirname,"public")));
