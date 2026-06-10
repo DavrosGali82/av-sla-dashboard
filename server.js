@@ -50,34 +50,22 @@ const CONFIG = {
     Reading:2, Sheffield:2, Southampton:1,
   },
   offices: ["Birmingham","Bristol","Cambridge","Cardiff","Colchester","Edinburgh","Gatwick","Glasgow","Leeds","Leicester","Liverpool","Manchester","Milton Keynes","Oxford","Reading","Sheffield","Southampton"],
-  investigationCategoryId: "b1d1eef2-e320-4e6d-b9f2-4a21896f5d68",
   issueCategoryId: "c3a2c651-8e31-4c10-a0eb-eae123f15f18",
-  investigationClosedStatusId: "6b4c8390-a0aa-4f93-bacc-acfc15d8f1f4",
-  fields: {
-    contactMethod:     "d69e29a1-45be-4f65-a5de-b138d5341dbe",
-    clientContactTime: "a98cee63-d1a0-408f-bac3-bd14817bb4b7",
-    faultType:         "80b3fbc0-382e-4d39-95eb-dbd5a3ed0b49",
-    site:              "75dac7c2-89bc-49a4-a232-1ba05c95a294",
-  },
-  resolutionLabels: {
-    "d60f6de1-0460-4b47-946f-3d8f4bd1597a":"Consumable",
-    "e4d92d16-50d9-4b0f-8b65-a31eb293b4d5":"Hardware Replacement",
-    "53d52972-ae9f-408c-8aaf-b8e1222f4477":"HCV Completed",
-    "fe41d6d1-2a0f-4d09-b4bc-561f2c002dae":"No Fault Found",
-    "22bff331-0d27-472e-a960-2dd014856af4":"Re-Cabling",
-    "397f81eb-a2b7-46e0-8f94-770577c0a323":"Re-Configuration",
-    "d1430b07-add5-4f4d-820f-e1219fc945d9":"Warranty Call Out",
-  },
   healthCheckTemplateId: "template_58624410208f4025b0757d47d04008d1",
   officeHCVTemplateId:   "template_a68b6c7b138e438f89c8706ff3b7ea37",
+
+  // Action label name → category
+  warrantyLabel:    "Warranty Call Out",
+  clientDelayLabel: "Client Delay",
+  faultLabels:      ["Room Down","Partial Fault","Routine"],
+  resolutionLabels: ["Hardware Replacement","Re-Cabling","Re-Configuration","Consumable","No Fault Found","HCV Completed"],
 };
 
 const TOTAL_CALLOUT_ALLOC = Object.values(CONFIG.callOutAllocation).reduce((a,b)=>a+b,0);
 const FAULTS = ["Room Down","Partial Fault","Routine"];
-const NULL_DATE = "0001-01-01";
 
 /* ----------------------------------------------------------------
-   Business hours calculator (Mon-Fri, 8am-6pm, excl. UK bank holidays)
+   Business hours calculator (Mon-Fri 8am-6pm, excl. UK bank holidays)
 ---------------------------------------------------------------- */
 function businessHoursBetween(startISO, endISO) {
   if (!startISO || !endISO) return null;
@@ -95,14 +83,13 @@ function businessHoursBetween(startISO, endISO) {
   let total = 0;
   const cur = new Date(start); cur.setUTCHours(0,0,0,0);
   const endDay = new Date(end); endDay.setUTCHours(0,0,0,0);
-
   while (cur <= endDay) {
     if (isWorkday(cur)) {
-      const sameAsStart = cur.toISOString().slice(0,10) === start.toISOString().slice(0,10);
-      const sameAsEnd   = cur.toISOString().slice(0,10) === end.toISOString().slice(0,10);
+      const sameStart = cur.toISOString().slice(0,10) === start.toISOString().slice(0,10);
+      const sameEnd   = cur.toISOString().slice(0,10) === end.toISOString().slice(0,10);
       let ds = S, de = E;
-      if (sameAsStart) { const h=start.getUTCHours()+start.getUTCMinutes()/60; ds=Math.max(S,Math.min(E,h)); }
-      if (sameAsEnd)   { const h=end.getUTCHours()+end.getUTCMinutes()/60;   de=Math.max(S,Math.min(E,h)); }
+      if (sameStart) { const h=start.getUTCHours()+start.getUTCMinutes()/60; ds=Math.max(S,Math.min(E,h)); }
+      if (sameEnd)   { const h=end.getUTCHours()+end.getUTCMinutes()/60;     de=Math.max(S,Math.min(E,h)); }
       if (de > ds) total += de - ds;
     }
     cur.setUTCDate(cur.getUTCDate()+1);
@@ -113,7 +100,6 @@ function businessHoursBetween(startISO, endISO) {
 /* ---------------------------------------------------------------- utils */
 const mKey = d => { const x=new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}`; };
 const now  = () => new Date();
-const isNullDate = d => !d || d.startsWith(NULL_DATE);
 
 function last6Months() {
   const out = [];
@@ -136,16 +122,40 @@ function pick(o, keys) {
   return null;
 }
 
-function getDetailField(fields, fieldId) {
-  if (!Array.isArray(fields)) return null;
-  const f = fields.find(f=>f.fieldId===fieldId);
-  if (!f) return null;
-  if (f.dateTime?.datetime && !isNullDate(f.dateTime.datetime)) return f.dateTime.datetime;
-  if (f.singleSelect?.selected) return f.singleSelect.selected;
-  if (f.singleSelect?.value)    return f.singleSelect.value;
-  if (f.site?.name)             return f.site.name;
-  if (f.text)                   return f.text;
-  return null;
+/* ----------------------------------------------------------------
+   Parse action_label pipe-separated JSON string
+   e.g. {"label_id":"xxx"|"label_name":"Partial Fault"}|{"label_id":"yyy"|"label_name":"Re-Configuration"}
+---------------------------------------------------------------- */
+function parseActionLabels(labelStr) {
+  if (!labelStr) return [];
+  try {
+    // Replace pipe-separators between objects, fix internal pipes to commas
+    const fixed = "[" + labelStr
+      .split("}|{").join("},{")
+      .replace(/\|/g, ",") + "]";
+    const arr = JSON.parse(fixed);
+    return arr.map(l => l.label_name || l.labelName || "").filter(Boolean);
+  } catch {
+    // Fallback: extract label_name values with regex
+    const names = [];
+    const re = /"label_name"\s*[:|,]\s*"([^"]+)"/g;
+    let m;
+    while ((m = re.exec(labelStr)) !== null) names.push(m[1]);
+    return names;
+  }
+}
+
+/* ----------------------------------------------------------------
+   Match issue to action by call reference in title
+   Issue title = "F231", Action title = "F231 - Description..."
+---------------------------------------------------------------- */
+function matchIssueToAction(issue, actions) {
+  const ref = (issue.title || "").trim();
+  if (!ref) return null;
+  return actions.find(a => {
+    const t = (a.title || "");
+    return t === ref || t.startsWith(ref + " ") || t.startsWith(ref + "-") || t.startsWith(ref + " -");
+  }) || null;
 }
 
 /* ---------------------------------------------------------------- SC API */
@@ -155,82 +165,84 @@ async function scFetch(p) {
   return r.json();
 }
 
-async function pullPaged(p) {
+async function pullFeed(p) {
   let url=p, rows=[], guard=0;
   while (url && guard<200) {
     guard++;
     const j = await scFetch(url);
-    const items = j.investigations || j.issues || j.tasks || j.data || [];
-    rows.push(...items);
-    const next = j.metadata?.next_page || j.nextPage;
-    url = next ? (next.startsWith("http") ? next.replace(SC_BASE,"") : next) : null;
+    rows.push(...(j.data||[]));
+    url = j.metadata?.next_page || null;
   }
   return rows;
-}
-
-async function getLinkedIssue(invId) {
-  try {
-    const j = await scFetch(`/investigations/v1/investigations/${invId}/issues`);
-    return (j.issues||j.data||[])[0] || null;
-  } catch { return null; }
-}
-
-async function getLinkedActions(invId) {
-  try {
-    const j = await scFetch(`/investigations/v1/investigations/${invId}/actions`);
-    return j.tasks||j.actions||j.data||[];
-  } catch { return []; }
 }
 
 /* ---------------------------------------------------------------- live */
 async function buildLiveReport(reportingMonthKey=null) {
   await loadBankHolidays();
   const start = new Date(CONFIG.reportStartDate);
-  const thisYearStart = new Date(now().getFullYear(), 0, 1);
 
-  const rawInv = await pullPaged(`/investigations/v1/investigations?categoryId=${CONFIG.investigationCategoryId}`).catch(()=>[]);
-  const investigations = rawInv.filter(i => new Date(i.createdAt||i.created_at||0) >= start);
+  // Pull Issues (Client Service Requests)
+  const allIssues = await pullFeed(`/feed/issues`).catch(()=>[]);
+  const issues = allIssues.filter(i =>
+    i.category_id === CONFIG.issueCategoryId &&
+    new Date(i.created_at||0) >= start
+  );
 
-  const cases = await Promise.all(investigations.map(async inv => {
-    const df = inv.detailFields || inv.detail_fields || [];
-    const clientContactTime = getDetailField(df, CONFIG.fields.clientContactTime);
-    const contactMethod     = getDetailField(df, CONFIG.fields.contactMethod) || "Unknown";
-    const faultType         = getDetailField(df, CONFIG.fields.faultType) || "Routine";
-    const siteName          = getDetailField(df, CONFIG.fields.site) || "—";
-    const invId             = inv.investigationId || inv.id;
+  // Pull Actions
+  const allActions = await pullFeed(`/feed/actions`).catch(()=>[]);
 
-    const isClosed = inv.statusId===CONFIG.investigationClosedStatusId ||
-                     inv.status?.id===CONFIG.investigationClosedStatusId ||
-                     inv.status?.title?.toLowerCase()==="closed";
-    const closedAt  = isClosed ? (inv.closedAt||inv.closed_at||null) : null;
-    const createdAt = inv.createdAt||inv.created_at;
+  // Build cases by matching issues to actions
+  const cases = issues.map(issue => {
+    const action = matchIssueToAction(issue, allActions);
+    const labels = action ? parseActionLabels(action.action_label) : [];
 
-    const linkedIssue    = await getLinkedIssue(invId);
-    const callReference  = linkedIssue?.questions?.find(q=>q.questionId==="0593579a-118c-49ec-9c30-0f2c47966e28")?.answer || linkedIssue?.title || null;
-    const issueCreatedAt = linkedIssue?.createdAt || null;
+    const fault       = labels.find(l => FAULTS.includes(l)) || "Routine";
+    const resolution  = labels.find(l => CONFIG.resolutionLabels.includes(l)) || null;
+    const warranty    = labels.includes(CONFIG.warrantyLabel);
+    const clientDelay = labels.includes(CONFIG.clientDelayLabel);
 
-    const responseHrs   = (issueCreatedAt && clientContactTime) ? businessHoursBetween(clientContactTime, issueCreatedAt) : null;
-    const resolutionHrs = (closedAt && clientContactTime)       ? businessHoursBetween(clientContactTime, closedAt)       : null;
+    const occurredAt  = issue.occurred_at || issue.created_at;
+    const respondedAt = issue.created_at;
+    const siteVisitAt = action?.created_at || null;
+    const resolvedAt  = action?.completed_at || null;
+    const isClosed    = !!(resolvedAt || issue.status === "CLOSED" || issue.completed_at);
+    const closedAt    = issue.completed_at || resolvedAt || null;
 
-    const actions = await getLinkedActions(invId);
-    const actionLabels = actions.flatMap(a => {
-      const labels = a.labels||a.label_ids||[];
-      return labels.map(l => {
-        const id = typeof l==="object" ? (l.id||l.label_id) : l;
-        return CONFIG.resolutionLabels[id] || null;
-      }).filter(Boolean);
-    });
-    const resolution = actionLabels.find(l=>l!=="Warranty Call Out") || null;
-    const warranty   = actionLabels.includes("Warranty Call Out");
+    // KPI 1 — Response time (contractual SLA) = issue.created_at − issue.occurred_at
+    const responseHrs = businessHoursBetween(occurredAt, respondedAt);
 
-    return { id:invId, title:inv.title||callReference||"Investigation", fault:faultType, contactMethod,
-             status:isClosed?"Closed":"Open", clientContactTime, issueCreatedAt, createdAt, closedAt,
-             responseHrs, resolutionHrs, resolution, warranty, office:matchOffice(siteName), room:siteName, callReference };
-  }));
+    // KPI 2 — Time to site visit = action.created_at − issue.occurred_at
+    const siteVisitHrs = siteVisitAt ? businessHoursBetween(occurredAt, siteVisitAt) : null;
+
+    // KPI 3 — Full resolution = action.completed_at − issue.occurred_at
+    const resolutionHrs = resolvedAt ? businessHoursBetween(occurredAt, resolvedAt) : null;
+
+    return {
+      id:            issue.id,
+      title:         issue.title || "Issue",
+      fault,
+      contactMethod: "Unknown", // not available in feed/issues
+      status:        isClosed ? "Closed" : "Open",
+      occurredAt,
+      respondedAt,
+      siteVisitAt,
+      closedAt,
+      responseHrs,
+      siteVisitHrs,
+      resolutionHrs,
+      resolution,
+      warranty,
+      clientDelay,
+      office:        matchOffice(issue.site_name),
+      room:          issue.site_name || "—",
+      callReference: issue.title,
+    };
+  });
 
   // Inspections for HCV
-  const allInsp = await pullPaged(`/feed/inspections?modified_after=${encodeURIComponent(CONFIG.reportStartDate)}`).catch(()=>[]);
-  const sitesRaw = await pullPaged("/feed/sites").catch(()=>[]);
+  const thisYearStart = new Date(now().getFullYear(), 0, 1);
+  const allInsp = await pullFeed(`/feed/inspections?modified_after=${encodeURIComponent(CONFIG.reportStartDate)}`).catch(()=>[]);
+  const sitesRaw = await pullFeed("/feed/sites").catch(()=>[]);
   const siteMap = {};
   sitesRaw.forEach(s=>{ siteMap[pick(s,["id","site_id"])] = pick(s,["name","site_name"])||"—"; });
 
@@ -240,7 +252,8 @@ async function buildLiveReport(reportingMonthKey=null) {
       ref:(pick(i,["audit_id","inspection_id","id"])||"").toString().slice(-8),
       room:siteMap[pick(i,["site_id","site"])]||"—",
       status:pick(i,["date_completed","completed_at"])?"Completed":"In Progress",
-      scheduled:pick(i,["created_at","date_started"]), completed:pick(i,["date_completed","completed_at"]),
+      scheduled:pick(i,["created_at","date_started"]),
+      completed:pick(i,["date_completed","completed_at"]),
     }));
 
   const officeHCVInsp = allInsp.filter(i=>
@@ -272,7 +285,7 @@ async function buildLiveReport(reportingMonthKey=null) {
     const sd=scheduledRaw?new Date(scheduledRaw):null;
     const status=isCompleted?"Completed":sd&&sd<now()?"Overdue":sd&&sd>=now()?"Booked":"In Progress";
     return { id, office:matchOffice(siteLbl), visitNum:visitNumRaw&&String(visitNumRaw).includes("2")?2:1,
-             status, scheduled:scheduledRaw||null, completed:completed||null, outcome, siteName:siteLbl };
+             status, scheduled:scheduledRaw||null, completed:completed||null, outcome };
   }));
 
   const officeHCVSummary = CONFIG.offices.map(o => {
@@ -285,7 +298,13 @@ async function buildLiveReport(reportingMonthKey=null) {
   const report = computeMetrics(cases, hcvRows, officeHCVSummary, reportingMonthKey);
   report.meta.mode = "live";
   report.improvements = improvements;
-  report.meta.connection = { investigationsPulled:rawInv.length, casesInPeriod:cases.length, inspectionsPulled:allInsp.length, officeHCVPulled:officeHCVInsp.length };
+  report.meta.connection = {
+    issuesPulled:    allIssues.length,
+    casesInPeriod:   cases.length,
+    actionsPulled:   allActions.length,
+    inspectionsPulled: allInsp.length,
+    officeHCVPulled: officeHCVInsp.length,
+  };
   return report;
 }
 
@@ -295,28 +314,41 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
   const curKey = reportingMonthKey || months[months.length-2].key;
   const curMonth = months.find(m=>m.key===curKey)||months[months.length-2];
   const t = CONFIG.targets;
-  const closed = cases.filter(c=>c.status==="Closed"&&c.closedAt);
-  const open   = cases.filter(c=>c.status==="Open");
+
+  const closed    = cases.filter(c=>c.status==="Closed");
+  const open      = cases.filter(c=>c.status==="Open");
   const slaClosed = closed.filter(c=>!c.warranty);
 
   const trendLoggedClosed = months.map(m=>({
-    month:m.label,
-    logged:cases.filter(c=>mKey(c.createdAt)===m.key).length,
-    closed:closed.filter(c=>mKey(c.closedAt)===m.key).length,
+    month:  m.label,
+    logged: cases.filter(c=>mKey(c.respondedAt)===m.key).length,
+    closed: closed.filter(c=>mKey(c.closedAt)===m.key).length,
   }));
 
+  // SLA performance — response time vs targets (contractual KPI)
   const slaByCategory = FAULTS.map(f=>{
-    const cc=slaClosed.filter(c=>c.fault===f&&c.responseHrs!=null);
-    const avg=cc.length?cc.reduce((s,c)=>s+c.responseHrs,0)/cc.length:0;
-    return {fault:f,avg:+avg.toFixed(2),target:t[f],within:cc.length?avg<=t[f]:true,count:cc.length};
+    const cc = slaClosed.filter(c=>c.fault===f&&c.responseHrs!=null);
+    const avg = cc.length ? cc.reduce((s,c)=>s+c.responseHrs,0)/cc.length : 0;
+    return {fault:f, avg:+avg.toFixed(2), target:t[f], within:cc.length?avg<=t[f]:true, count:cc.length};
   });
 
-  const slaResolution = FAULTS.map(f=>{
-    const cc=slaClosed.filter(c=>c.fault===f&&c.resolutionHrs!=null);
-    const avg=cc.length?cc.reduce((s,c)=>s+c.resolutionHrs,0)/cc.length:0;
-    return {fault:f,avg:+avg.toFixed(2),target:t[f],within:cc.length?avg<=t[f]:true,count:cc.length};
+  // Site visit averages — with and without client delay
+  const siteVisitAvg = FAULTS.map(f=>{
+    const all  = slaClosed.filter(c=>c.fault===f&&c.siteVisitHrs!=null);
+    const excl = all.filter(c=>!c.clientDelay);
+    const avgAll  = all.length  ? +(all.reduce((s,c)=>s+c.siteVisitHrs,0)/all.length).toFixed(2)  : null;
+    const avgExcl = excl.length ? +(excl.reduce((s,c)=>s+c.siteVisitHrs,0)/excl.length).toFixed(2) : null;
+    return {fault:f, avgAll, avgExcl, countAll:all.length, countExcl:excl.length};
   });
 
+  // Full resolution averages
+  const resolutionAvg = FAULTS.map(f=>{
+    const cc = slaClosed.filter(c=>c.fault===f&&c.resolutionHrs!=null);
+    const avg = cc.length ? +(cc.reduce((s,c)=>s+c.resolutionHrs,0)/cc.length).toFixed(2) : null;
+    return {fault:f, avg, count:cc.length};
+  });
+
+  // 6-month response time trend
   const slaTrend = months.map(m=>{
     const row={month:m.label};
     FAULTS.forEach(f=>{
@@ -326,25 +358,37 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
     return row;
   });
 
+  // Breached cases (response time vs SLA target)
   const breachedCases = slaClosed
     .filter(c=>c.responseHrs!=null&&c.responseHrs>t[c.fault])
     .map(c=>({title:c.title,fault:c.fault,room:c.room,office:c.office,
-               callReference:c.callReference,contactMethod:c.contactMethod,
-               hrs:c.responseHrs,target:t[c.fault],over:+(c.responseHrs-t[c.fault]).toFixed(2),closed:c.closedAt}))
+               callReference:c.callReference,hrs:c.responseHrs,
+               target:t[c.fault],over:+(c.responseHrs-t[c.fault]).toFixed(2),
+               closed:c.closedAt,clientDelay:c.clientDelay}))
     .sort((a,b)=>b.over-a.over).slice(0,20);
 
+  // Room and resolution breakdowns
   const roomCount={};
   slaClosed.forEach(c=>{roomCount[c.room]=(roomCount[c.room]||0)+1;});
   const topRooms=Object.entries(roomCount).sort((a,b)=>b[1]-a[1]).slice(0,7).map(([name,value])=>({name,value}));
   const topRoomNames=topRooms.slice(0,5).map(r=>r.name);
-  const roomTrend=months.map(m=>{const row={month:m.label};topRoomNames.forEach(r=>{row[r]=slaClosed.filter(c=>c.room===r&&mKey(c.closedAt)===m.key).length;});return row;});
+  const roomTrend=months.map(m=>{
+    const row={month:m.label};
+    topRoomNames.forEach(r=>{row[r]=slaClosed.filter(c=>c.room===r&&mKey(c.closedAt)===m.key).length;});
+    return row;
+  });
 
   const resCount={};
   slaClosed.forEach(c=>{const r=c.resolution||"Not recorded";resCount[r]=(resCount[r]||0)+1;});
   const byResolution=Object.entries(resCount).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value}));
   const topResNames=byResolution.slice(0,5).map(r=>r.name);
-  const resTrend=months.map(m=>{const row={month:m.label};topResNames.forEach(r=>{row[r]=slaClosed.filter(c=>(c.resolution||"Not recorded")===r&&mKey(c.closedAt)===m.key).length;});return row;});
+  const resTrend=months.map(m=>{
+    const row={month:m.label};
+    topResNames.forEach(r=>{row[r]=slaClosed.filter(c=>(c.resolution||"Not recorded")===r&&mKey(c.closedAt)===m.key).length;});
+    return row;
+  });
 
+  // Office allocations
   const officeUsage={}, warrantyByOffice={};
   cases.forEach(c=>{
     if(c.warranty) warrantyByOffice[c.office]=(warrantyByOffice[c.office]||0)+1;
@@ -352,31 +396,28 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
   });
   const allOffices=new Set([...CONFIG.offices,...Object.keys(officeUsage)]);
   const officeAllocations=[...allOffices].map(o=>{
-    const used=officeUsage[o]||0,alloc=CONFIG.callOutAllocation[o]||1;
+    const used=officeUsage[o]||0, alloc=CONFIG.callOutAllocation[o]||1;
     const pct=+(used/alloc*100).toFixed(1);
-    return {office:o,alloc,used,remaining:alloc-used,pct,rag:pct>=90?"red":pct>=60?"amber":"green",warranty:warrantyByOffice[o]||0};
+    return {office:o,alloc,used,remaining:alloc-used,pct,
+            rag:pct>=90?"red":pct>=60?"amber":"green",warranty:warrantyByOffice[o]||0};
   }).sort((a,b)=>b.pct-a.pct);
 
-  const curCases=cases.filter(c=>mKey(c.createdAt)===curKey);
-  const curClosed=slaClosed.filter(c=>mKey(c.closedAt)===curKey);
-  const openCases=open.map(c=>({
-    title:c.title,fault:c.fault,room:c.room,office:c.office,
-    contactMethod:c.contactMethod,callReference:c.callReference,
-    created:c.createdAt,
-    ageHrs:c.clientContactTime?businessHoursBetween(c.clientContactTime,now().toISOString()):null,
-    warranty:c.warranty||false,
+  // Current month
+  const curCases  = cases.filter(c=>mKey(c.respondedAt)===curKey);
+  const curClosed = slaClosed.filter(c=>mKey(c.closedAt)===curKey);
+  const openCases = open.map(c=>({
+    title:c.title, fault:c.fault, room:c.room, office:c.office,
+    callReference:c.callReference, created:c.respondedAt,
+    ageHrs:c.occurredAt?businessHoursBetween(c.occurredAt,now().toISOString()):null,
+    warranty:c.warranty||false, clientDelay:c.clientDelay||false,
   }));
 
   const openByCategory={};
   FAULTS.forEach(f=>{openByCategory[f]=open.filter(c=>c.fault===f&&!c.warranty).length;});
   const roomDownBreaches=open.filter(c=>!c.warranty&&c.fault==="Room Down"&&
-    c.clientContactTime&&businessHoursBetween(c.clientContactTime,now().toISOString())>t["Room Down"]).length;
+    c.occurredAt&&businessHoursBetween(c.occurredAt,now().toISOString())>t["Room Down"]).length;
 
-  const byContactMethod={
-    email:cases.filter(c=>c.contactMethod==="Email").length,
-    phone:cases.filter(c=>c.contactMethod==="Phone Call").length,
-  };
-
+  // HCV
   const expectedTotal=CONFIG.offices.length*CONFIG.visitsPerOfficePerYear;
   const allVisitSlots=officeHCVSummary.flatMap(o=>[o.visit1,o.visit2]);
 
@@ -387,12 +428,12 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
     targets:t, responseTargets:CONFIG.responseTargets, callOutAllocationTotal:TOTAL_CALLOUT_ALLOC,
     kpis:{loggedThisMonth:curCases.length,closedThisMonth:curClosed.length,openNow:open.length,roomDownBreaches},
     warrantyThisMonth:curCases.filter(c=>c.warranty).length,
-    warrantyThisMonthCases:curCases.filter(c=>c.warranty).map(c=>({title:c.title,fault:c.fault,room:c.room,created:c.createdAt,status:c.status,warranty:true})),
-    byContactMethod, openByCategory, roomDownBreaches,
-    trendLoggedClosed, slaByCategory, slaResolution, slaTrend, breachedCases,
+    warrantyThisMonthCases:curCases.filter(c=>c.warranty).map(c=>({title:c.title,fault:c.fault,room:c.room,created:c.respondedAt,status:c.status,warranty:true})),
+    openByCategory, roomDownBreaches,
+    trendLoggedClosed, slaByCategory, siteVisitAvg, resolutionAvg, slaTrend, breachedCases,
     topRooms, topRoomNames, roomTrend, byResolution, topResNames, resTrend,
     serviceCalls:{month:curCases.length,sixMonth:cases.length,
-      trend:months.map(m=>({month:m.label,visits:cases.filter(c=>mKey(c.createdAt)===m.key).length}))},
+      trend:months.map(m=>({month:m.label,visits:cases.filter(c=>mKey(c.respondedAt)===m.key).length}))},
     hcv:{scheduled:hcvRows.length,completed:hcvRows.filter(h=>h.status==="Completed").length,
          inProgress:hcvRows.filter(h=>h.status==="In Progress").length,
          outstanding:hcvRows.filter(h=>h.status==="Scheduled").length,rows:hcvRows.slice(0,15)},
@@ -403,8 +444,12 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
                notScheduled:allVisitSlots.filter(v=>v.status==="Not scheduled").length,
                summary:officeHCVSummary},
     officeAllocations,
-    loggedThisMonthCases:curCases.map(c=>({title:c.title,fault:c.fault,room:c.room,created:c.createdAt,status:c.status,warranty:c.warranty||false,callReference:c.callReference,contactMethod:c.contactMethod})),
-    closedThisMonthCases:curClosed.map(c=>({title:c.title,fault:c.fault,room:c.room,closed:c.closedAt,resolution:c.resolution,warranty:false,callReference:c.callReference,responseHrs:c.responseHrs,resolutionHrs:c.resolutionHrs})),
+    loggedThisMonthCases:curCases.map(c=>({title:c.title,fault:c.fault,room:c.room,
+      created:c.respondedAt,status:c.status,warranty:c.warranty||false,callReference:c.callReference})),
+    closedThisMonthCases:curClosed.map(c=>({title:c.title,fault:c.fault,room:c.room,
+      closed:c.closedAt,resolution:c.resolution,warranty:false,callReference:c.callReference,
+      responseHrs:c.responseHrs,siteVisitHrs:c.siteVisitHrs,resolutionHrs:c.resolutionHrs,
+      clientDelay:c.clientDelay})),
     openCases, improvements,
   };
 }
@@ -415,7 +460,7 @@ function buildSampleReport(reportingMonthKey=null) {
   const roomDefs=[
     {room:"Leeds - Ryder",office:"Leeds"},{room:"Leeds - The Exchange",office:"Leeds"},
     {room:"Birmingham - Colmore",office:"Birmingham"},{room:"Manchester - Hardman",office:"Manchester"},
-    {room:"London - Finsbury",office:"London"},{room:"Bristol - Glass Wharf",office:"Bristol"},
+    {room:"Bristol - Glass Wharf",office:"Bristol"},{room:"Edinburgh - Atria",office:"Edinburgh"},
   ];
   const cases=[];
   months.forEach((m,mi)=>{
@@ -423,26 +468,30 @@ function buildSampleReport(reportingMonthKey=null) {
     for (let i=0;i<n;i++) {
       const fault=i%7===0?"Room Down":i%2?"Partial Fault":"Routine";
       const [y,mo]=m.key.split("-");
-      const cc=new Date(+y,+mo-1,2+(i*2)%25,8+(i%3));
-      const delay=0.3+(i%4)*0.4;
-      const ic=new Date(cc.getTime()+delay*36e5);
+      const occurred=new Date(+y,+mo-1,2+(i*2)%25,8+(i%3));
+      const responseDelay=0.2+(i%4)*0.3;
+      const responded=new Date(occurred.getTime()+responseDelay*36e5);
+      const siteDelay=responseDelay+(i%3)*2;
+      const siteVisit=new Date(occurred.getTime()+siteDelay*36e5);
       const isOpen=mi===5&&i%5===0;
       const tgt=fault==="Room Down"?8:fault==="Partial Fault"?24:120;
-      const resH=i%6===0?tgt*1.8:tgt*(0.2+(i%4)*0.1);
-      const closedAt=isOpen?null:new Date(cc.getTime()+resH*36e5);
+      const resH=i%6===0?tgt*1.8:tgt*(0.2+(i%4)*0.15);
+      const closedAt=isOpen?null:new Date(occurred.getTime()+resH*36e5);
       const rd=roomDefs[(mi*3+i)%roomDefs.length];
+      const clientDelay=i%8===0;
       cases.push({
-        id:`s-${mi}-${i}`,title:`Case ${i+1}`,fault,
+        id:`s-${mi}-${i}`, title:`GT-${2570000+mi*100+i}`, fault,
         contactMethod:i%3===0?"Phone Call":"Email",
         status:isOpen?"Open":"Closed",
-        clientContactTime:cc.toISOString(),
-        issueCreatedAt:ic.toISOString(),
-        createdAt:ic.toISOString(),
+        occurredAt:occurred.toISOString(), respondedAt:responded.toISOString(),
+        siteVisitAt:isOpen?null:siteVisit.toISOString(),
         closedAt:closedAt?.toISOString()||null,
-        responseHrs:isOpen?null:+delay.toFixed(2),
-        resolutionHrs:isOpen?null:+(businessHoursBetween(cc.toISOString(),closedAt?.toISOString()||null)||0).toFixed(2),
+        responseHrs:+responseDelay.toFixed(2),
+        siteVisitHrs:isOpen?null:+(businessHoursBetween(occurred.toISOString(),siteVisit.toISOString())||0).toFixed(2),
+        resolutionHrs:isOpen?null:+(businessHoursBetween(occurred.toISOString(),closedAt?.toISOString()||null)||0).toFixed(2),
         resolution:isOpen?null:["Re-Configuration","Hardware Replacement","Re-Cabling","No Fault Found","Consumable"][i%5],
-        warranty:false,office:rd.office,room:rd.room,callReference:`GT-${2570000+mi*100+i}`,
+        warranty:false, clientDelay, office:rd.office, room:rd.room,
+        callReference:`GT-${2570000+mi*100+i}`,
       });
     }
   });
@@ -487,13 +536,10 @@ app.get("/api/report", async (req,res)=>{
   } catch(err) { console.error(err); res.json({error:err.message,fallback:buildSampleReport(m)}); }
 });
 
-app.get("/api/debug-feeds", async (req,res)=>{
-  try {
-    const issues  = await scFetch("/feed/issues?limit=2");
-    const actions = await scFetch("/feed/actions?limit=2");
-    res.json({ issues, actions });
-  } catch(e){ res.json({error:e.message}); }
-});
+app.get("/api/improvements",        (req,res)=>res.json(improvements));
+app.post("/api/improvements",       (req,res)=>{ const item={...req.body,id:"imp-"+Date.now()}; improvements.push(item); saveImprovements(improvements); res.json(item); });
+app.put("/api/improvements/:id",    (req,res)=>{ const idx=improvements.findIndex(i=>i.id===req.params.id); if(idx===-1)return res.status(404).json({error:"Not found"}); improvements[idx]={...improvements[idx],...req.body}; saveImprovements(improvements); res.json(improvements[idx]); });
+app.delete("/api/improvements/:id", (req,res)=>{ improvements=improvements.filter(i=>i.id!==req.params.id); saveImprovements(improvements); res.json({ok:true}); });
 
 app.use(express.static(path.join(__dirname,"public")));
 app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
