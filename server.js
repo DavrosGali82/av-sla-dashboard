@@ -55,10 +55,20 @@ const CONFIG = {
   officeHCVTemplateId:   "template_a68b6c7b138e438f89c8706ff3b7ea37",
 
   // Action label name → category
-  warrantyLabel:    "Warranty Call Out",
-  clientDelayLabel: "Client Delay",
-  faultLabels:      ["Room Down","Partial Fault","Routine"],
-  resolutionLabels: ["Hardware Replacement","Re-Cabling","Re-Configuration","Consumable","No Fault Found","HCV Completed"],
+  warrantyLabel:        "Warranty Call Out",
+  clientDelayLabel:     "Client Delay",
+  remoteResolutionLabel:"Remote Resolution",
+  faultLabels:          ["Room Down","Partial Fault","Routine"],
+  // Site visit labels — these indicate an engineer went to site (counts as call-out)
+  siteVisitLabels:      ["Hardware Replacement","Re-Cabling","Re-Configuration","Consumable","No Fault Found","HCV Completed"],
+  resolutionLabels:     ["Hardware Replacement","Re-Cabling","Re-Configuration","Consumable","No Fault Found","HCV Completed","Remote Resolution"],
+
+  // Label IDs (for future use)
+  labelIds: {
+    clientDelay:      "48226bf8-50f9-4c3a-a934-6dd6b6cca5ba",
+    remoteResolution: "f26c5433-7619-4cec-8e60-e8c9fed01a37",
+    warrantyCallOut:  "d1430b07-add5-4f4d-820f-e1219fc945d9",
+  },
 };
 
 const TOTAL_CALLOUT_ALLOC = Object.values(CONFIG.callOutAllocation).reduce((a,b)=>a+b,0);
@@ -196,10 +206,12 @@ async function buildLiveReport(reportingMonthKey=null) {
     const action = matchIssueToAction(issue, allActions);
     const labels = action ? parseActionLabels(action.action_label) : [];
 
-    const fault       = labels.find(l => FAULTS.includes(l)) || "Routine";
-    const resolution  = labels.find(l => CONFIG.resolutionLabels.includes(l)) || null;
-    const warranty    = labels.includes(CONFIG.warrantyLabel);
-    const clientDelay = labels.includes(CONFIG.clientDelayLabel);
+    const fault            = labels.find(l => FAULTS.includes(l)) || "Routine";
+    const resolution       = labels.find(l => CONFIG.resolutionLabels.includes(l)) || null;
+    const warranty         = labels.includes(CONFIG.warrantyLabel);
+    const clientDelay      = labels.includes(CONFIG.clientDelayLabel);
+    const remoteResolution = labels.includes(CONFIG.remoteResolutionLabel);
+    const siteVisit        = labels.some(l => CONFIG.siteVisitLabels.includes(l));
 
     const occurredAt  = issue.occurred_at || issue.created_at;
     const respondedAt = issue.created_at;
@@ -233,6 +245,8 @@ async function buildLiveReport(reportingMonthKey=null) {
       resolution,
       warranty,
       clientDelay,
+      remoteResolution,
+      siteVisit,
       office:        matchOffice(issue.site_name),
       room:          issue.site_name || "—",
       callReference: issue.title,
@@ -389,17 +403,25 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
   });
 
   // Office allocations
-  const officeUsage={}, warrantyByOffice={};
+  const officeUsage={}, warrantyByOffice={}, remoteByOffice={};
   cases.forEach(c=>{
-    if(c.warranty) warrantyByOffice[c.office]=(warrantyByOffice[c.office]||0)+1;
-    else officeUsage[c.office]=(officeUsage[c.office]||0)+1;
+    if(c.warranty){
+      warrantyByOffice[c.office]=(warrantyByOffice[c.office]||0)+1;
+    } else if(c.remoteResolution){
+      remoteByOffice[c.office]=(remoteByOffice[c.office]||0)+1;
+    } else if(c.siteVisit){
+      // Only site visits count against call-out allocation
+      officeUsage[c.office]=(officeUsage[c.office]||0)+1;
+    }
   });
   const allOffices=new Set([...CONFIG.offices,...Object.keys(officeUsage)]);
   const officeAllocations=[...allOffices].map(o=>{
     const used=officeUsage[o]||0, alloc=CONFIG.callOutAllocation[o]||1;
     const pct=+(used/alloc*100).toFixed(1);
     return {office:o,alloc,used,remaining:alloc-used,pct,
-            rag:pct>=90?"red":pct>=60?"amber":"green",warranty:warrantyByOffice[o]||0};
+            rag:pct>=90?"red":pct>=60?"amber":"green",
+            warranty:warrantyByOffice[o]||0,
+            remote:remoteByOffice[o]||0};
   }).sort((a,b)=>b.pct-a.pct);
 
   // Current month
@@ -431,6 +453,11 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
     warrantyThisMonthCases:curCases.filter(c=>c.warranty).map(c=>({title:c.title,fault:c.fault,room:c.room,created:c.respondedAt,status:c.status,warranty:true})),
     openByCategory, roomDownBreaches,
     trendLoggedClosed, slaByCategory, siteVisitAvg, resolutionAvg, slaTrend, breachedCases,
+    resolutionBreakdown:{
+      siteVisit:   cases.filter(c=>!c.warranty&&c.siteVisit).length,
+      remote:      cases.filter(c=>!c.warranty&&c.remoteResolution).length,
+      unrecorded:  cases.filter(c=>!c.warranty&&!c.siteVisit&&!c.remoteResolution&&c.status==="Closed").length,
+    },
     topRooms, topRoomNames, roomTrend, byResolution, topResNames, resTrend,
     serviceCalls:{month:curCases.length,sixMonth:cases.length,
       trend:months.map(m=>({month:m.label,visits:cases.filter(c=>mKey(c.respondedAt)===m.key).length}))},
@@ -490,6 +517,8 @@ function buildSampleReport(reportingMonthKey=null) {
         siteVisitHrs:isOpen?null:+(businessHoursBetween(occurred.toISOString(),siteVisit.toISOString())||0).toFixed(2),
         resolutionHrs:isOpen?null:+(businessHoursBetween(occurred.toISOString(),closedAt?.toISOString()||null)||0).toFixed(2),
         resolution:isOpen?null:["Re-Configuration","Hardware Replacement","Re-Cabling","No Fault Found","Consumable"][i%5],
+        siteVisit:!isOpen&&i%4!==0,        // ~75% are site visits
+        remoteResolution:!isOpen&&i%4===0, // ~25% resolved remotely
         warranty:false, clientDelay, office:rd.office, room:rd.room,
         callReference:`GT-${2570000+mi*100+i}`,
       });
@@ -540,14 +569,6 @@ app.get("/api/improvements",        (req,res)=>res.json(improvements));
 app.post("/api/improvements",       (req,res)=>{ const item={...req.body,id:"imp-"+Date.now()}; improvements.push(item); saveImprovements(improvements); res.json(item); });
 app.put("/api/improvements/:id",    (req,res)=>{ const idx=improvements.findIndex(i=>i.id===req.params.id); if(idx===-1)return res.status(404).json({error:"Not found"}); improvements[idx]={...improvements[idx],...req.body}; saveImprovements(improvements); res.json(improvements[idx]); });
 app.delete("/api/improvements/:id", (req,res)=>{ improvements=improvements.filter(i=>i.id!==req.params.id); saveImprovements(improvements); res.json({ok:true}); });
-
-app.get("/api/debug-labels", async (req,res)=>{
-  try {
-    const j = await scFetch("/feed/actions?limit=5");
-    const labels = j.data?.map(a=>a.action_label).filter(Boolean);
-    res.json({ rawLabels: labels });
-  } catch(e){ res.json({error:e.message}); }
-});
 
 app.use(express.static(path.join(__dirname,"public")));
 app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
