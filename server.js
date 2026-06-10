@@ -504,6 +504,23 @@ app.get("/api/debug-inv-list", async (req,res)=>{
   } catch(e){ res.json({error:e.message}); }
 });
 
+app.get("/api/debug-inv-probe", async (req,res)=>{
+  const paths = [
+    "/investigations/v1/investigations",
+    "/investigations/v2/investigations", 
+    "/feed/investigations",
+    "/investigation/v1/investigations",
+  ];
+  const results = {};
+  for (const p of paths) {
+    try {
+      const r = await fetch(`${SC_BASE}${p}`, { headers:{ Authorization:`Bearer ${SC_TOKEN}`, Accept:"application/json" } });
+      results[p] = { status: r.status, ok: r.ok };
+    } catch(e) { results[p] = { error: e.message }; }
+  }
+  res.json(results);
+});
+
 app.use(express.static(path.join(__dirname,"public")));
 app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
 
