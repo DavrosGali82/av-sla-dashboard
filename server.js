@@ -541,6 +541,14 @@ app.post("/api/improvements",       (req,res)=>{ const item={...req.body,id:"imp
 app.put("/api/improvements/:id",    (req,res)=>{ const idx=improvements.findIndex(i=>i.id===req.params.id); if(idx===-1)return res.status(404).json({error:"Not found"}); improvements[idx]={...improvements[idx],...req.body}; saveImprovements(improvements); res.json(improvements[idx]); });
 app.delete("/api/improvements/:id", (req,res)=>{ improvements=improvements.filter(i=>i.id!==req.params.id); saveImprovements(improvements); res.json({ok:true}); });
 
+app.get("/api/debug-labels", async (req,res)=>{
+  try {
+    const j = await scFetch("/feed/actions?limit=5");
+    const labels = j.data?.map(a=>a.action_label).filter(Boolean);
+    res.json({ rawLabels: labels });
+  } catch(e){ res.json({error:e.message}); }
+});
+
 app.use(express.static(path.join(__dirname,"public")));
 app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
 
