@@ -333,40 +333,78 @@ function buildSLA(){
   const ref=el("div","card gap");
   ref.innerHTML=`<div class="card-title">Confirmed SLA KPIs — TECHPR-0510</div>
   <div class="g3" style="margin-top:8px">
-    <div><div style="font-size:12px;color:var(--grey)">Onsite response (Room Down)</div><div style="font-size:22px;font-weight:800">${R.targets["Room Down"]}h</div></div>
-    <div><div style="font-size:12px;color:var(--grey)">Email response</div><div style="font-size:22px;font-weight:800">${R.responseTargets?.email||4}h</div></div>
-    <div><div style="font-size:12px;color:var(--grey)">Telephone response</div><div style="font-size:22px;font-weight:800">${R.responseTargets?.telephone||1}h</div></div>
-    <div><div style="font-size:12px;color:var(--grey)">HC report turnaround</div><div style="font-size:22px;font-weight:800">5 days</div></div>
+    <div><div style="font-size:12px;color:var(--grey)">Room Down response target</div><div style="font-size:22px;font-weight:800">${R.targets["Room Down"]}h</div></div>
+    <div><div style="font-size:12px;color:var(--grey)">Partial Fault response target</div><div style="font-size:22px;font-weight:800">${R.targets["Partial Fault"]}h</div></div>
+    <div><div style="font-size:12px;color:var(--grey)">Routine response target</div><div style="font-size:22px;font-weight:800">${R.targets["Routine"]}h</div></div>
     <div><div style="font-size:12px;color:var(--grey)">Call-outs total/yr (estate)</div><div style="font-size:22px;font-weight:800">${R.callOutAllocationTotal||29}</div></div>
-    <div><div style="font-size:12px;color:var(--grey)">Partial Fault target</div><div style="font-size:22px;font-weight:800">${R.targets["Partial Fault"]}h</div></div>
+    <div><div style="font-size:12px;color:var(--grey)">HC report turnaround</div><div style="font-size:22px;font-weight:800">5 days</div></div>
+    <div><div style="font-size:12px;color:var(--grey)">All response times in business hours</div><div style="font-size:14px;font-weight:600;color:var(--grey)">8am–6pm Mon–Fri</div></div>
   </div>`;
   pg.append(ref);
 
-  // SLA performance cards
-  const cards=el("div","g3 gap");
+  // SLA response time cards (contractual KPI)
+  const slaHead=el("div","gap");
+  slaHead.innerHTML=`<div style="font-size:15px;font-weight:800;margin-bottom:4px">Response time <span style="font-size:12px;font-weight:400;color:var(--grey)">— contractual SLA (business hours from client contact to acknowledgement)</span></div>`;
+  pg.append(slaHead);
+  const cards=el("div","g3");
   (R.slaByCategory||[]).forEach(s=>{
-    const col=s.within?GOOD:BAD, pct=Math.min(100,(s.avg/s.target)*100);
+    const col=s.within?GOOD:BAD, pct=Math.min(100,s.target?+(s.avg/s.target*100).toFixed(1):0);
     const d=el("div","sla-card");
-    d.innerHTML=`<div class="sla-top"><b>${s.fault}</b>${pill(s.within?"Within target":"Over target",col)}</div>
-      <div class="sla-num">${s.avg}h</div>
+    d.innerHTML=`<div class="sla-top"><b>${s.fault}</b>${pill(s.within?"Within SLA":"Breach",col)}</div>
+      <div class="sla-num" style="color:${col}">${s.avg}h</div>
       <div class="sla-target">Target: ${s.target}h · ${s.count} cases</div>
       <div class="progress"><i style="width:${pct}%;background:${col}"></i></div>`;
     cards.append(d);
   });
   pg.append(cards);
 
-  // SLA trend chart
-  const ct=el("div","card gap"); ct.innerHTML=`<div class="card-title">Average resolution time trend (hrs) — 6 months · dashed = SLA target</div><canvas id="cSlaFull"></canvas>`;
+  // Site visit averages (informational)
+  const svHead=el("div","gap");
+  svHead.innerHTML=`<div style="font-size:15px;font-weight:800;margin-bottom:4px">Avg time to site visit <span style="font-size:12px;font-weight:400;color:var(--grey)">— informational only, no SLA target · client delay cases shown separately</span></div>`;
+  pg.append(svHead);
+  const svCards=el("div","g3");
+  (R.siteVisitAvg||[]).forEach(s=>{
+    const d=el("div","sla-card");
+    const avgDisplay = s.avgAll!=null ? s.avgAll+"h" : "—";
+    const exclDisplay = s.avgExcl!=null && s.countExcl!==s.countAll ? `<div style="font-size:11px;color:var(--grey);margin-top:4px">Excl. client delays: ${s.avgExcl}h (${s.countExcl} cases)</div>` : "";
+    d.innerHTML=`<div class="sla-top"><b>${s.fault}</b><span style="font-size:11px;color:var(--grey)">${s.countAll} cases</span></div>
+      <div class="sla-num" style="color:${BLUE}">${avgDisplay}</div>
+      <div class="sla-target">Average time from contact to site</div>${exclDisplay}`;
+    svCards.append(d);
+  });
+  pg.append(svCards);
+
+  // Full resolution averages (informational)
+  const resHead=el("div","gap");
+  resHead.innerHTML=`<div style="font-size:15px;font-weight:800;margin-bottom:4px">Avg full resolution time <span style="font-size:12px;font-weight:400;color:var(--grey)">— informational only, from client contact to case closed</span></div>`;
+  pg.append(resHead);
+  const resCards=el("div","g3");
+  (R.resolutionAvg||[]).forEach(s=>{
+    const d=el("div","sla-card");
+    d.innerHTML=`<div class="sla-top"><b>${s.fault}</b><span style="font-size:11px;color:var(--grey)">${s.count} cases</span></div>
+      <div class="sla-num" style="color:${P3}">${s.avg!=null?s.avg+"h":"—"}</div>
+      <div class="sla-target">Average end-to-end resolution</div>`;
+    resCards.append(d);
+  });
+  pg.append(resCards);
+
+  // Response time trend chart
+  const ct=el("div","card gap"); ct.innerHTML=`<div class="card-title">Response time trend (business hrs) — 6 months · dashed = SLA target</div><canvas id="cSlaFull"></canvas>`;
   pg.append(ct);
 
   // Breached cases table
   if((R.breachedCases||[]).length){
     const bt=el("div","card gap");
-    bt.innerHTML=`<div class="card-title">Cases that exceeded SLA target (closed, most over-target first)</div>
-    <table><thead><tr><th>Title</th><th>Room</th><th>Fault</th><th>Target</th><th>Actual</th><th>Over by</th><th>Closed</th></tr></thead>
-    <tbody>${R.breachedCases.map(c=>`<tr><td>${c.title}</td><td>${c.room}</td><td>${pill(c.fault,FC[c.fault])}</td>
-      <td>${c.target}h</td><td style="color:${BAD};font-weight:700">${c.hrs}h</td>
-      <td style="color:${BAD};font-weight:700">+${c.over}h</td><td>${fmt(c.closed)}</td></tr>`).join("")}
+    bt.innerHTML=`<div class="card-title">Cases that exceeded SLA response target — most over-target first</div>
+    <table><thead><tr><th>Ref</th><th>Room</th><th>Fault</th><th>Target</th><th>Actual</th><th>Over by</th><th>Client delay</th><th>Closed</th></tr></thead>
+    <tbody>${R.breachedCases.map(c=>`<tr>
+      <td><b>${c.callReference||c.title}</b></td><td>${c.room}</td>
+      <td>${pill(c.fault,FC[c.fault]||BLUE)}</td>
+      <td>${c.target}h</td>
+      <td style="color:${BAD};font-weight:700">${c.hrs}h</td>
+      <td style="color:${BAD};font-weight:700">+${c.over}h</td>
+      <td>${c.clientDelay?pill("Yes",WARN):"—"}</td>
+      <td>${fmt(c.closed)}</td></tr>`).join("")}
     </tbody></table>`;
     pg.append(bt);
   }
