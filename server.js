@@ -521,6 +521,13 @@ app.get("/api/debug-inv-probe", async (req,res)=>{
   res.json(results);
 });
 
+app.get("/api/debug-issues", async (req,res)=>{
+  try {
+    const j = await scFetch(`/issues/v1/issues?categoryId=${CONFIG.issueCategoryId}&limit=3`);
+    res.json(j);
+  } catch(e){ res.json({error:e.message}); }
+});
+
 app.use(express.static(path.join(__dirname,"public")));
 app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
 
