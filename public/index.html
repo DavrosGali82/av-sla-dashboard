@@ -406,6 +406,18 @@ function buildCases(){
   });
   pg.append(rb);
 
+  // Warranty summary card
+  const warr=R.resolutionBreakdown||{};
+  const wc=el("div","card gap");
+  const wTotal=(warr.siteVisit||0)+(warr.remote||0)+(warr.unrecorded||0);
+  const wCases=((R.loggedThisMonthCases||[]).filter(c=>c.warranty).length||0);
+  wc.innerHTML=`<div class="card-title">All cases — SLA vs warranty</div>
+  <div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:8px">
+    <div><div style="font-size:12px;color:var(--grey)">SLA cases (6 months)</div><div style="font-size:28px;font-weight:800;color:${P}">${wTotal}</div></div>
+    <div><div style="font-size:12px;color:var(--grey)">Warranty cases (6 months)</div><div style="font-size:28px;font-weight:800;color:#8a8a8a">${(R.warrantyThisMonth||0)}</div></div>
+  </div>`;
+  pg.append(wc);
+
   // Top rooms + resolution donut
   const r1=el("div","g2 gap");
   const cr=el("div","card"); cr.innerHTML=`<div class="card-title">Top rooms by closed cases (all time)</div><canvas id="cRooms"></canvas>`;
@@ -458,7 +470,7 @@ function buildOffices(){
 
 /* ── 5. HCV */
 function hcvStatusCol(s){
-  return s==="Completed"?GOOD:s==="Booked"?BLUE:s==="Overdue"?BAD:s==="In Progress"?BLUE:"#b0b0b0";
+  return s==="Completed"?GOOD:s==="Booked"?BLUE:s==="Overdue"?BAD:s==="In Progress"?BLUE:s==="N/A"?"#9b8fd1":"#b0b0b0";
 }
 
 function buildHCV(){
@@ -498,7 +510,8 @@ function buildHCV(){
       ${pill("Completed",GOOD)} ${oh.completed||0} &nbsp;
       ${pill("Booked",BLUE)} ${oh.booked||0} &nbsp;
       ${pill("Overdue",BAD)} ${oh.overdue||0} &nbsp;
-      ${pill("Not scheduled","#b0b0b0")} ${oh.notScheduled||0}
+      ${pill("Not scheduled","#b0b0b0")} ${oh.notScheduled||0} &nbsp;
+      ${pill("N/A — 1 visit only","#9b8fd1")} ${(oh.summary||[]).filter(o=>o.visit2?.status==="N/A").length}
     </div>`;
   pg.append(prog);
 
@@ -508,6 +521,8 @@ function buildHCV(){
     const v=(v)=>{
       if(!v||v.status==="Not scheduled")
         return `<td>${pill("Not scheduled","#b0b0b0")}</td><td style="color:#bbb">—</td>`;
+      if(v.status==="N/A")
+        return `<td>${pill("N/A","#9b8fd1")}</td><td style="color:#bbb;font-size:11px">Single visit office</td>`;
       const col=hcvStatusCol(v.status);
       const date=v.status==="Completed"?fmt(v.completed):fmt(v.scheduled);
       const dateLabel=v.status==="Completed"?"Completed":"Scheduled";
