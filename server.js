@@ -280,8 +280,9 @@ async function buildLiveReport(reportingMonthKey=null) {
     const resolution       = labels.find(l => CONFIG.resolutionLabels.includes(l)) || null;
     const clientDelay      = labels.includes(CONFIG.clientDelayLabel);
     const remoteResolution = labels.includes(CONFIG.remoteResolutionLabel);
-    // Remote resolution takes precedence over warranty
-    const warranty         = labels.includes(CONFIG.warrantyLabel) && !remoteResolution;
+    // warranty flag preserved for SLA exclusion — remote just affects call-out counting
+    const warranty         = labels.includes(CONFIG.warrantyLabel);
+    // site visit only applies if not resolved remotely
     const siteVisit        = !remoteResolution && labels.some(l => CONFIG.siteVisitLabels.includes(l));
 
     const occurredAt  = issue.occurred_at || issue.created_at;
@@ -497,12 +498,13 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
   // Office allocations
   const officeUsage={}, warrantyByOffice={}, remoteByOffice={};
   cases.forEach(c=>{
-    if(c.warranty){
-      warrantyByOffice[c.office]=(warrantyByOffice[c.office]||0)+1;
-    } else if(c.remoteResolution){
+    if(c.remoteResolution){
+      // Remote takes precedence for counting — no call-out used regardless of warranty
       remoteByOffice[c.office]=(remoteByOffice[c.office]||0)+1;
+    } else if(c.warranty){
+      warrantyByOffice[c.office]=(warrantyByOffice[c.office]||0)+1;
     } else if(c.siteVisit){
-      // Only site visits count against call-out allocation
+      // Only non-warranty, non-remote site visits count against call-out allocation
       officeUsage[c.office]=(officeUsage[c.office]||0)+1;
     }
   });
