@@ -244,9 +244,8 @@ async function reload(month){
   // Populate month picker on first load
   const picker=document.getElementById("monthPicker");
   if(picker && R.meta.monthsKeys && !picker.options.length){
-    const currentMonthKey=R.meta.monthsKeys[R.meta.monthsKeys.length-1];
     picker.innerHTML=R.meta.monthsKeys.map((k,i)=>
-      `<option value="${k}" ${k===currentMonthKey?"selected":""}>${R.meta.monthsLabels[i]}</option>`
+      `<option value="${k}" ${k===R.meta.reportingMonth?"selected":""}>${R.meta.monthsLabels[i]}</option>`
     ).join("");
   }
 
@@ -767,17 +766,28 @@ function drawSLACharts(){
 
 function drawCasesCharts(){
   const L=R.meta.monthsLabels;
+  const WC="#b0a8d8"; // warranty colour — light purple
+
   mkChart("cRooms","bar",{labels:(R.topRooms||[]).map(x=>x.name),datasets:[{data:(R.topRooms||[]).map(x=>x.value),backgroundColor:P3}]},{plugins:{legend:{display:false}},scales:{x:{ticks:{maxRotation:30}},y:{beginAtZero:true,ticks:{precision:0}}}});
 
   mkChart("cRes","doughnut",{labels:(R.byResolution||[]).map(x=>x.name),datasets:[{data:(R.byResolution||[]).map(x=>x.value),backgroundColor:PALETTE}]},{plugins:{legend:{position:"right"}}});
 
   const topRooms=R.topRoomNames||[];
-  mkChart("cRoomTrend","bar",{labels:L,datasets:topRooms.map((r,i)=>({label:r,data:(R.roomTrend||[]).map(x=>x[r]||0),backgroundColor:PALETTE[i%PALETTE.length]}))},{scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,ticks:{precision:0}}}});
+  mkChart("cRoomTrend","bar",{labels:L,datasets:[
+    ...topRooms.map((r,i)=>({label:r+" (SLA)",data:(R.roomTrend||[]).map(x=>x[r]||0),backgroundColor:PALETTE[i%PALETTE.length],stack:"sla"})),
+    ...topRooms.map((r,i)=>({label:r+" (Warranty)",data:(R.roomTrend||[]).map(x=>x[r+"_w"]||0),backgroundColor:WC,stack:"warranty"})),
+  ]},{scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,ticks:{precision:0}}},plugins:{legend:{labels:{font:{size:10}}}}});
 
   const topRes=R.topResNames||[];
-  mkChart("cResTrend","bar",{labels:L,datasets:topRes.map((r,i)=>({label:r,data:(R.resTrend||[]).map(x=>x[r]||0),backgroundColor:PALETTE[i%PALETTE.length]}))},{scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,ticks:{precision:0}}}});
+  mkChart("cResTrend","bar",{labels:L,datasets:[
+    ...topRes.map((r,i)=>({label:r+" (SLA)",data:(R.resTrend||[]).map(x=>x[r]||0),backgroundColor:PALETTE[i%PALETTE.length],stack:"sla"})),
+    ...topRes.map((r,i)=>({label:r+" (Warranty)",data:(R.resTrend||[]).map(x=>x[r+"_w"]||0),backgroundColor:WC,stack:"warranty"})),
+  ]},{scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,ticks:{precision:0}}},plugins:{legend:{labels:{font:{size:10}}}}});
 
-  mkChart("cSC","bar",{labels:L,datasets:[{label:"Service calls",data:(R.serviceCalls?.trend||[]).map(x=>x.visits),backgroundColor:P3}]},{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{precision:0}}}});
+  mkChart("cSC","bar",{labels:L,datasets:[
+    {label:"SLA cases",data:(R.serviceCalls?.allTrend||[]).map(x=>x.sla||0),backgroundColor:P3,stack:"s"},
+    {label:"Warranty",data:(R.serviceCalls?.allTrend||[]).map(x=>x.warranty||0),backgroundColor:WC,stack:"s"},
+  ]},{scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,ticks:{precision:0}}},plugins:{legend:{position:"bottom"}}});
 }
 
 function drawOfficeCharts(){
@@ -802,7 +812,7 @@ function drawMetricsCharts(){
 
 /* ── bootstrap */
 initNav();
-reload(new Date().toISOString().slice(0,7));
+reload();
 </script>
 </body>
 </html>
