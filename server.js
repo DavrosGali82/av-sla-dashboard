@@ -677,24 +677,6 @@ app.post("/api/improvements",       (req,res)=>{ const item={...req.body,id:"imp
 app.put("/api/improvements/:id",    (req,res)=>{ const idx=improvements.findIndex(i=>i.id===req.params.id); if(idx===-1)return res.status(404).json({error:"Not found"}); improvements[idx]={...improvements[idx],...req.body}; saveImprovements(improvements); res.json(improvements[idx]); });
 app.delete("/api/improvements/:id", (req,res)=>{ improvements=improvements.filter(i=>i.id!==req.params.id); saveImprovements(improvements); res.json({ok:true}); });
 
-app.get("/api/debug-case", async (req,res)=>{
-  try {
-    const allIssues = await pullFeed("/feed/issues");
-    const allActions = await pullFeed("/feed/actions");
-    const issues = allIssues.filter(i=>i.category_id===CONFIG.issueCategoryId);
-    const result = issues.map(issue=>{
-      const matched = matchIssueToActions(issue, allActions);
-      return {
-        issueTitle: issue.title,
-        occurred_at: issue.occurred_at,
-        created_at: issue.created_at,
-        matchedActions: matched.map(a=>({title:a.title, labels:a.action_label, completed_at:a.completed_at}))
-      };
-    });
-    res.json(result);
-  } catch(e){ res.json({error:e.message}); }
-});
-
 app.use(express.static(path.join(__dirname,"public")));
 app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
 
