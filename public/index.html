@@ -244,8 +244,9 @@ async function reload(month){
   // Populate month picker on first load
   const picker=document.getElementById("monthPicker");
   if(picker && R.meta.monthsKeys && !picker.options.length){
+    const currentMonthKey=R.meta.monthsKeys[R.meta.monthsKeys.length-1];
     picker.innerHTML=R.meta.monthsKeys.map((k,i)=>
-      `<option value="${k}" ${k===R.meta.reportingMonth?"selected":""}>${R.meta.monthsLabels[i]}</option>`
+      `<option value="${k}" ${k===currentMonthKey?"selected":""}>${R.meta.monthsLabels[i]}</option>`
     ).join("");
   }
 
@@ -801,7 +802,7 @@ function drawMetricsCharts(){
 
 /* ── bootstrap */
 initNav();
-reload();
+reload(new Date().toISOString().slice(0,7));
 </script>
 </body>
 </html>
