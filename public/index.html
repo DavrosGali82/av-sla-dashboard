@@ -245,7 +245,7 @@ async function reload(month){
   const picker=document.getElementById("monthPicker");
   if(picker && R.meta.monthsKeys && !picker.options.length){
     picker.innerHTML=R.meta.monthsKeys.map((k,i)=>
-      `<option value="${k}" ${k===R.meta.monthsKeys[R.meta.monthsKeys.length-1]?"selected":""}>${R.meta.monthsLabels[i]}</option>`
+      `<option value="${k}" ${k===R.meta.reportingMonth?"selected":""}>${R.meta.monthsLabels[i]}</option>`
     ).join("");
   }
 
@@ -411,11 +411,10 @@ function buildCases(){
   const warr=R.resolutionBreakdown||{};
   const wc=el("div","card gap");
   const wTotal=(warr.siteVisit||0)+(warr.remote||0)+(warr.unrecorded||0);
-  const wCases=((R.loggedThisMonthCases||[]).filter(c=>c.warranty).length||0);
   wc.innerHTML=`<div class="card-title">All cases — SLA vs warranty</div>
   <div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:8px">
     <div><div style="font-size:12px;color:var(--grey)">SLA cases (6 months)</div><div style="font-size:28px;font-weight:800;color:${P}">${wTotal}</div></div>
-    <div><div style="font-size:12px;color:var(--grey)">Warranty cases (6 months)</div><div style="font-size:28px;font-weight:800;color:#8a8a8a">${(R.warrantyThisMonth||0)}</div></div>
+    <div><div style="font-size:12px;color:var(--grey)">Warranty cases (6 months)</div><div style="font-size:28px;font-weight:800;color:#8a8a8a">${R.warrantySixMonth||0}</div></div>
   </div>`;
   pg.append(wc);
 
@@ -790,24 +789,26 @@ function drawCasesCharts(){
   const resLabels=(R.byResolution||[]).map(x=>x.name);
   const slaResData=resLabels.map(name=>(R.resTrend||[]).reduce((s,m)=>s+(m[name]||0),0));
   const warResData=resLabels.map(name=>(R.resTrend||[]).reduce((s,m)=>s+(m[name+"_w"]||0),0));
-  mkChart("cRes","bar",{labels:resLabels,datasets:[
-    {label:"SLA",data:slaResData,backgroundColor:SLA_PALETTE},
-    {label:"Warranty",data:warResData,backgroundColor:WAR_PALETTE},
-  ]},{plugins:{legend:{position:"bottom"}},scales:{x:{ticks:{maxRotation:20}},y:{beginAtZero:true,ticks:{precision:0}}}});
+  const hasWarRes=warResData.some(v=>v>0);
+  const resDatasets=[{label:"SLA",data:slaResData,backgroundColor:SLA_PALETTE.slice(0,resLabels.length)}];
+  if(hasWarRes) resDatasets.push({label:"Warranty",data:warResData,backgroundColor:WAR_PALETTE.slice(0,resLabels.length)});
+  mkChart("cRes","bar",{labels:resLabels,datasets:resDatasets},{plugins:{legend:{position:"bottom",labels:{filter:item=>item.datasetIndex<resDatasets.length}}},scales:{x:{ticks:{maxRotation:20}},y:{beginAtZero:true,ticks:{precision:0}}}});
 
-  // Room trend — SLA solid, warranty hatched with warm palette
+  // Room trend — only include warranty datasets that have actual data
   const topRooms=R.topRoomNames||[];
-  mkChart("cRoomTrend","bar",{labels:L,datasets:[
-    ...topRooms.map((r,i)=>({label:r+" (SLA)",    data:(R.roomTrend||[]).map(x=>x[r]||0),    backgroundColor:SLA_PALETTE[i%SLA_PALETTE.length],stack:"s"})),
-    ...topRooms.map((r,i)=>({label:r+" (Warranty)",data:(R.roomTrend||[]).map(x=>x[r+"_w"]||0),backgroundColor:WAR_PALETTE[i%WAR_PALETTE.length],stack:"w"})),
-  ]},{scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,ticks:{precision:0}}},plugins:{legend:{labels:{font:{size:10}}}}});
+  const roomSlaDatasets=topRooms.map((r,i)=>({label:r+" (SLA)",data:(R.roomTrend||[]).map(x=>x[r]||0),backgroundColor:SLA_PALETTE[i%SLA_PALETTE.length],stack:"s"}))
+    .filter(ds=>ds.data.some(v=>v>0));
+  const roomWarDatasets=topRooms.map((r,i)=>({label:r+" (Warranty)",data:(R.roomTrend||[]).map(x=>x[r+"_w"]||0),backgroundColor:WAR_PALETTE[i%WAR_PALETTE.length],stack:"w"}))
+    .filter(ds=>ds.data.some(v=>v>0));
+  mkChart("cRoomTrend","bar",{labels:L,datasets:[...roomSlaDatasets,...roomWarDatasets]},{scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,ticks:{precision:0}}},plugins:{legend:{labels:{font:{size:10}}}}});
 
-  // Resolution trend
+  // Resolution trend — filter zero datasets from both SLA and warranty
   const topRes=R.topResNames||[];
-  mkChart("cResTrend","bar",{labels:L,datasets:[
-    ...topRes.map((r,i)=>({label:r+" (SLA)",    data:(R.resTrend||[]).map(x=>x[r]||0),    backgroundColor:SLA_PALETTE[i%SLA_PALETTE.length],stack:"s"})),
-    ...topRes.map((r,i)=>({label:r+" (Warranty)",data:(R.resTrend||[]).map(x=>x[r+"_w"]||0),backgroundColor:WAR_PALETTE[i%WAR_PALETTE.length],stack:"w"})),
-  ]},{scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,ticks:{precision:0}}},plugins:{legend:{labels:{font:{size:10}}}}});
+  const resSlaDatasets=topRes.map((r,i)=>({label:r+" (SLA)",data:(R.resTrend||[]).map(x=>x[r]||0),backgroundColor:SLA_PALETTE[i%SLA_PALETTE.length],stack:"s"}))
+    .filter(ds=>ds.data.some(v=>v>0));
+  const resWarDatasets=topRes.map((r,i)=>({label:r+" (Warranty)",data:(R.resTrend||[]).map(x=>x[r+"_w"]||0),backgroundColor:WAR_PALETTE[i%WAR_PALETTE.length],stack:"w"}))
+    .filter(ds=>ds.data.some(v=>v>0));
+  mkChart("cResTrend","bar",{labels:L,datasets:[...resSlaDatasets,...resWarDatasets]},{scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,ticks:{precision:0}}},plugins:{legend:{labels:{font:{size:10}}}}});
 
   // Service calls — SLA dark, warranty warm orange, stacked
   mkChart("cSC","bar",{labels:L,datasets:[
@@ -838,7 +839,7 @@ function drawMetricsCharts(){
 
 /* ── bootstrap */
 initNav();
-reload(new Date().toISOString().slice(0,7));
+reload();
 </script>
 </body>
 </html>
