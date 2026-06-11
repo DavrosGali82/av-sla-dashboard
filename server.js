@@ -75,60 +75,91 @@ const TOTAL_CALLOUT_ALLOC = Object.values(CONFIG.callOutAllocation).reduce((a,b)
 const FAULTS = ["Room Down","Partial Fault","Routine"];
 
 /* ----------------------------------------------------------------
-   Business hours calculator (Mon-Fri 8am-6pm, excl. UK bank holidays)
-   If startISO falls outside business hours, clamps to next opening time.
-   This means out-of-hours contacts are measured from the next 8am.
+   Business hours calculator (Mon-Fri 8am-6pm UK time, excl. bank holidays)
+   Converts all timestamps to UK local time (handles GMT/BST automatically)
+   before applying the 8am-6pm window.
 ---------------------------------------------------------------- */
+
+// Get UK local hour (handles BST/GMT automatically)
+function ukHour(dt) {
+  const s = dt.toLocaleString("en-GB", { timeZone:"Europe/London", hour:"2-digit", minute:"2-digit", hour12:false });
+  const [h, m] = s.split(":").map(Number);
+  return h + m/60;
+}
+
+// Get UK local date string YYYY-MM-DD
+function ukDateKey(dt) {
+  return dt.toLocaleDateString("en-GB", { timeZone:"Europe/London", year:"numeric", month:"2-digit", day:"2-digit" })
+    .split("/").reverse().join("-");
+}
+
 function isWorkday(dt) {
-  const d = dt.getUTCDay();
-  if (d === 0 || d === 6) return false;
-  return !bankHolidays.has(dt.toISOString().slice(0,10));
+  // Use UK local day of week
+  const dow = new Date(dt.toLocaleString("en-US", { timeZone:"Europe/London" })).getDay();
+  if (dow === 0 || dow === 6) return false;
+  return !bankHolidays.has(ukDateKey(dt));
 }
 
 function nextBusinessOpen(dt) {
-  // Returns the next business hours opening at or after dt
   const S = CONFIG.workdayStart, E = CONFIG.workdayEnd;
   const d = new Date(dt);
-  const h = d.getUTCHours() + d.getUTCMinutes()/60 + d.getUTCSeconds()/3600;
+  const h = ukHour(d);
 
-  // If it's a workday and within hours, return as-is
   if (isWorkday(d) && h >= S && h < E) return d;
 
-  // If it's a workday but before hours start, clamp to 8am same day
+  // Before hours on a workday — clamp to 8am UK same day
   if (isWorkday(d) && h < S) {
-    const clamped = new Date(d);
-    clamped.setUTCHours(S, 0, 0, 0);
+    // Find 8am UK time for this date
+    const dateStr = ukDateKey(d);
+    const clamped = new Date(`${dateStr}T00:00:00`);
+    // Adjust to get exactly 8am UK time
+    const testH = ukHour(clamped);
+    clamped.setTime(clamped.getTime() + (S - testH) * 3600000);
     return clamped;
   }
 
-  // Otherwise advance to next workday at 8am
+  // After hours or weekend — advance to next workday 8am
   const next = new Date(d);
-  next.setUTCDate(next.getUTCDate() + 1);
-  next.setUTCHours(S, 0, 0, 0);
-  while (!isWorkday(next)) {
-    next.setUTCDate(next.getUTCDate() + 1);
+  next.setTime(next.getTime() + 24*3600000);
+  // Reset to start of day UK time
+  const nextDateStr = ukDateKey(next);
+  const nextDay = new Date(`${nextDateStr}T00:00:00Z`);
+  // Find 8am UK for that day
+  for (let offset = 0; offset <= 6; offset++) {
+    const try_ = new Date(nextDay.getTime() + offset * 24*3600000);
+    if (isWorkday(try_)) {
+      const h0 = ukHour(try_);
+      try_.setTime(try_.getTime() + (S - h0) * 3600000);
+      return try_;
+    }
   }
   return next;
 }
 
 function businessHoursBetween(startISO, endISO) {
   if (!startISO || !endISO) return null;
-  // Clamp start to next business hours opening
   const start = nextBusinessOpen(new Date(startISO));
   const end   = new Date(endISO);
   if (end <= start) return 0;
   const S = CONFIG.workdayStart, E = CONFIG.workdayEnd;
 
   let total = 0;
-  const cur = new Date(start); cur.setUTCHours(0,0,0,0);
-  const endDay = new Date(end); endDay.setUTCHours(0,0,0,0);
+  // Iterate day by day in UK date space
+  const startDateKey = ukDateKey(start);
+  const endDateKey   = ukDateKey(end);
+
+  // Build list of UK dates to iterate
+  const cur = new Date(start);
+  cur.setUTCHours(0,0,0,0);
+  const endDay = new Date(end);
+  endDay.setUTCHours(0,0,0,0);
+
   while (cur <= endDay) {
+    const curKey = ukDateKey(cur);
     if (isWorkday(cur)) {
-      const sameStart = cur.toISOString().slice(0,10) === start.toISOString().slice(0,10);
-      const sameEnd   = cur.toISOString().slice(0,10) === end.toISOString().slice(0,10);
       let ds = S, de = E;
-      if (sameStart) { const h=start.getUTCHours()+start.getUTCMinutes()/60; ds=Math.max(S,Math.min(E,h)); }
-      if (sameEnd)   { const h=end.getUTCHours()+end.getUTCMinutes()/60;     de=Math.max(S,Math.min(E,h)); }
+      if (curKey === startDateKey) { const h=ukHour(start); ds=Math.max(S,Math.min(E,h)); }
+      if (curKey === endDateKey)   { const h=ukHour(end);   de=Math.max(S,Math.min(E,h)); }
       if (de > ds) total += de - ds;
     }
     cur.setUTCDate(cur.getUTCDate()+1);
