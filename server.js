@@ -76,19 +76,48 @@ const FAULTS = ["Room Down","Partial Fault","Routine"];
 
 /* ----------------------------------------------------------------
    Business hours calculator (Mon-Fri 8am-6pm, excl. UK bank holidays)
+   If startISO falls outside business hours, clamps to next opening time.
+   This means out-of-hours contacts are measured from the next 8am.
 ---------------------------------------------------------------- */
+function isWorkday(dt) {
+  const d = dt.getUTCDay();
+  if (d === 0 || d === 6) return false;
+  return !bankHolidays.has(dt.toISOString().slice(0,10));
+}
+
+function nextBusinessOpen(dt) {
+  // Returns the next business hours opening at or after dt
+  const S = CONFIG.workdayStart, E = CONFIG.workdayEnd;
+  const d = new Date(dt);
+  const h = d.getUTCHours() + d.getUTCMinutes()/60 + d.getUTCSeconds()/3600;
+
+  // If it's a workday and within hours, return as-is
+  if (isWorkday(d) && h >= S && h < E) return d;
+
+  // If it's a workday but before hours start, clamp to 8am same day
+  if (isWorkday(d) && h < S) {
+    const clamped = new Date(d);
+    clamped.setUTCHours(S, 0, 0, 0);
+    return clamped;
+  }
+
+  // Otherwise advance to next workday at 8am
+  const next = new Date(d);
+  next.setUTCDate(next.getUTCDate() + 1);
+  next.setUTCHours(S, 0, 0, 0);
+  while (!isWorkday(next)) {
+    next.setUTCDate(next.getUTCDate() + 1);
+  }
+  return next;
+}
+
 function businessHoursBetween(startISO, endISO) {
   if (!startISO || !endISO) return null;
-  const start = new Date(startISO);
+  // Clamp start to next business hours opening
+  const start = nextBusinessOpen(new Date(startISO));
   const end   = new Date(endISO);
   if (end <= start) return 0;
   const S = CONFIG.workdayStart, E = CONFIG.workdayEnd;
-
-  function isWorkday(dt) {
-    const d = dt.getUTCDay();
-    if (d === 0 || d === 6) return false;
-    return !bankHolidays.has(dt.toISOString().slice(0,10));
-  }
 
   let total = 0;
   const cur = new Date(start); cur.setUTCHours(0,0,0,0);
