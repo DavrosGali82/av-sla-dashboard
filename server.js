@@ -278,10 +278,11 @@ async function buildLiveReport(reportingMonthKey=null) {
 
     const fault            = labels.find(l => FAULTS.includes(l)) || "Routine";
     const resolution       = labels.find(l => CONFIG.resolutionLabels.includes(l)) || null;
-    const warranty         = labels.includes(CONFIG.warrantyLabel);
     const clientDelay      = labels.includes(CONFIG.clientDelayLabel);
     const remoteResolution = labels.includes(CONFIG.remoteResolutionLabel);
-    const siteVisit        = labels.some(l => CONFIG.siteVisitLabels.includes(l));
+    // Remote resolution takes precedence over warranty
+    const warranty         = labels.includes(CONFIG.warrantyLabel) && !remoteResolution;
+    const siteVisit        = !remoteResolution && labels.some(l => CONFIG.siteVisitLabels.includes(l));
 
     const occurredAt  = issue.occurred_at || issue.created_at;
     const respondedAt = issue.created_at;
@@ -545,6 +546,7 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
     targets:t, responseTargets:CONFIG.responseTargets, callOutAllocationTotal:TOTAL_CALLOUT_ALLOC,
     kpis:{loggedThisMonth:curCases.length,closedThisMonth:curClosed.length,openNow:open.length,roomDownBreaches},
     warrantyThisMonth:curCases.filter(c=>c.warranty).length,
+    warrantySixMonth:cases.filter(c=>c.warranty).length,
     warrantyThisMonthCases:curCases.filter(c=>c.warranty).map(c=>({title:c.title,fault:c.fault,room:c.room,created:c.respondedAt,status:c.status,warranty:true})),
     openByCategory, roomDownBreaches,
     trendLoggedClosed, slaByCategory, siteVisitAvg, resolutionAvg, slaTrend, breachedCases,
