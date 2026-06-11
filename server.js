@@ -457,25 +457,41 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
     .sort((a,b)=>b.over-a.over).slice(0,20);
 
   // Room and resolution breakdowns
+  // All closed cases (SLA + warranty) for charts
+  const allClosed = closed; // includes warranty
+
   const roomCount={};
-  slaClosed.forEach(c=>{roomCount[c.room]=(roomCount[c.room]||0)+1;});
+  allClosed.forEach(c=>{roomCount[c.room]=(roomCount[c.room]||0)+1;});
   const topRooms=Object.entries(roomCount).sort((a,b)=>b[1]-a[1]).slice(0,7).map(([name,value])=>({name,value}));
   const topRoomNames=topRooms.slice(0,5).map(r=>r.name);
   const roomTrend=months.map(m=>{
     const row={month:m.label};
-    topRoomNames.forEach(r=>{row[r]=slaClosed.filter(c=>c.room===r&&mKey(c.closedAt)===m.key).length;});
+    topRoomNames.forEach(r=>{
+      row[r]       = slaClosed.filter(c=>c.room===r&&mKey(c.closedAt)===m.key).length;
+      row[r+"_w"]  = allClosed.filter(c=>c.warranty&&c.room===r&&mKey(c.closedAt)===m.key).length;
+    });
     return row;
   });
 
   const resCount={};
-  slaClosed.forEach(c=>{const r=c.resolution||"Not recorded";resCount[r]=(resCount[r]||0)+1;});
+  allClosed.forEach(c=>{const r=c.resolution||"Not recorded";resCount[r]=(resCount[r]||0)+1;});
   const byResolution=Object.entries(resCount).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value}));
   const topResNames=byResolution.slice(0,5).map(r=>r.name);
   const resTrend=months.map(m=>{
     const row={month:m.label};
-    topResNames.forEach(r=>{row[r]=slaClosed.filter(c=>(c.resolution||"Not recorded")===r&&mKey(c.closedAt)===m.key).length;});
+    topResNames.forEach(r=>{
+      row[r]      = slaClosed.filter(c=>(c.resolution||"Not recorded")===r&&mKey(c.closedAt)===m.key).length;
+      row[r+"_w"] = allClosed.filter(c=>c.warranty&&(c.resolution||"Not recorded")===r&&mKey(c.closedAt)===m.key).length;
+    });
     return row;
   });
+
+  // Service calls trend — all cases including warranty
+  const allCasesServiceTrend = months.map(m=>({
+    month:m.label,
+    sla:     cases.filter(c=>!c.warranty&&mKey(c.respondedAt)===m.key).length,
+    warranty:cases.filter(c=>c.warranty&&mKey(c.respondedAt)===m.key).length,
+  }));
 
   // Office allocations
   const officeUsage={}, warrantyByOffice={}, remoteByOffice={};
@@ -539,7 +555,8 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
     },
     topRooms, topRoomNames, roomTrend, byResolution, topResNames, resTrend,
     serviceCalls:{month:curCases.length,sixMonth:cases.length,
-      trend:months.map(m=>({month:m.label,visits:cases.filter(c=>mKey(c.respondedAt)===m.key).length}))},
+      trend:months.map(m=>({month:m.label,visits:cases.filter(c=>mKey(c.respondedAt)===m.key).length})),
+      allTrend:allCasesServiceTrend},
     hcv:{scheduled:hcvRows.length,completed:hcvRows.filter(h=>h.status==="Completed").length,
          inProgress:hcvRows.filter(h=>h.status==="In Progress").length,
          outstanding:hcvRows.filter(h=>h.status==="Scheduled").length,rows:hcvRows.slice(0,15)},
