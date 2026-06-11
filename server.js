@@ -42,7 +42,13 @@ const CONFIG = {
   targets: { "Room Down": 8, "Partial Fault": 24, Routine: 120 },
   responseTargets: { email: 4, telephone: 1, hcReport: 120 },
   workdayStart: 8, workdayEnd: 18,
-  visitsPerOfficePerYear: 2,
+  visitsPerOfficePerYear: 2, // default fallback only
+  hcvVisits: {
+    Birmingham:2, Bristol:1, Cambridge:2, Cardiff:1, Colchester:1,
+    Edinburgh:2, Gatwick:1, Glasgow:2, Leeds:2, Leicester:2,
+    Liverpool:2, Manchester:2, "Milton Keynes":1, Oxford:2,
+    Reading:2, Sheffield:1, Southampton:2,
+  },
   callOutAllocation: {
     Birmingham:2, Bristol:2, Cambridge:2, Cardiff:1, Colchester:1,
     Edinburgh:2, Gatwick:2, Glasgow:2, Leeds:2, Leicester:1,
@@ -216,16 +222,20 @@ function parseActionLabels(labelStr) {
 }
 
 /* ----------------------------------------------------------------
-   Match issue to action by call reference in title
-   Issue title = "F231", Action title = "F231 - Description..."
+   Match issue to actions by call reference number in title
+   Issue title = "F2570732 - The Exchange"
+   Action title = "F2570732 - No mic audio" or "F2570732 - Ryder Screen"
+   Matches on the reference number only (first word before space/dash)
+   Returns ALL matching actions so labels from all are collected
 ---------------------------------------------------------------- */
-function matchIssueToAction(issue, actions) {
-  const ref = (issue.title || "").trim();
-  if (!ref) return null;
-  return actions.find(a => {
+function matchIssueToActions(issue, actions) {
+  // Extract just the reference number e.g. "F2570732" from "F2570732 - The Exchange"
+  const ref = (issue.title || "").split(/[\s-]/)[0].trim();
+  if (!ref || ref.length < 3) return [];
+  return actions.filter(a => {
     const t = (a.title || "");
     return t === ref || t.startsWith(ref + " ") || t.startsWith(ref + "-") || t.startsWith(ref + " -");
-  }) || null;
+  });
 }
 
 /* ---------------------------------------------------------------- SC API */
@@ -263,8 +273,8 @@ async function buildLiveReport(reportingMonthKey=null) {
 
   // Build cases by matching issues to actions
   const cases = issues.map(issue => {
-    const action = matchIssueToAction(issue, allActions);
-    const labels = action ? parseActionLabels(action.action_label) : [];
+    const matchedActions = matchIssueToActions(issue, allActions);
+    const labels = matchedActions.flatMap(a => parseActionLabels(a.action_label));
 
     const fault            = labels.find(l => FAULTS.includes(l)) || "Routine";
     const resolution       = labels.find(l => CONFIG.resolutionLabels.includes(l)) || null;
@@ -275,8 +285,9 @@ async function buildLiveReport(reportingMonthKey=null) {
 
     const occurredAt  = issue.occurred_at || issue.created_at;
     const respondedAt = issue.created_at;
-    const siteVisitAt = action?.created_at || null;
-    const resolvedAt  = action?.completed_at || null;
+    const firstAction = matchedActions[0] || null;
+    const siteVisitAt = firstAction?.created_at || null;
+    const resolvedAt  = firstAction?.completed_at || null;
     const isClosed    = !!(resolvedAt || issue.status === "CLOSED" || issue.completed_at);
     const closedAt    = issue.completed_at || resolvedAt || null;
 
@@ -365,8 +376,12 @@ async function buildLiveReport(reportingMonthKey=null) {
   const officeHCVSummary = CONFIG.offices.map(o => {
     const visits=officeHCVRaw.filter(h=>h.office===o);
     const v1=visits.find(h=>h.visitNum===1)||null, v2=visits.find(h=>h.visitNum===2)||null;
+    const allowedVisits=CONFIG.hcvVisits[o]||2;
     const mkSlot=v=>v?{status:v.status,scheduled:v.scheduled,completed:v.completed,outcome:v.outcome}:{status:"Not scheduled",scheduled:null,completed:null,outcome:null};
-    return {office:o,visit1:mkSlot(v1),visit2:mkSlot(v2)};
+    const visit2Slot = allowedVisits<2
+      ? {status:"N/A",scheduled:null,completed:null,outcome:null}
+      : mkSlot(v2);
+    return {office:o,visit1:mkSlot(v1),visit2:visit2Slot,allowedVisits};
   });
 
   const report = computeMetrics(cases, hcvRows, officeHCVSummary, reportingMonthKey);
@@ -500,8 +515,12 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
     c.occurredAt&&businessHoursBetween(c.occurredAt,now().toISOString())>t["Room Down"]).length;
 
   // HCV
-  const expectedTotal=CONFIG.offices.length*CONFIG.visitsPerOfficePerYear;
-  const allVisitSlots=officeHCVSummary.flatMap(o=>[o.visit1,o.visit2]);
+  const expectedTotal=Object.values(CONFIG.hcvVisits).reduce((a,b)=>a+b,0);
+  const allVisitSlots=officeHCVSummary.flatMap(o=>{
+    const slots=[o.visit1];
+    if(o.visit2?.status!=="N/A") slots.push(o.visit2);
+    return slots;
+  });
 
   return {
     meta:{mode:"sample",generatedAt:now().toISOString(),company:CONFIG.companyName,
@@ -591,20 +610,23 @@ function buildSampleReport(reportingMonthKey=null) {
   ];
 
   const sampleStatuses=[
-    ["Completed","Booked"],["Booked","Not scheduled"],["Not scheduled","Not scheduled"],
-    ["Completed","Completed"],["Overdue","Not scheduled"],["Booked","Not scheduled"],
+    ["Completed","Booked"],["Booked","N/A"],["Not scheduled","Not scheduled"],
+    ["Completed","N/A"],["Overdue","N/A"],["Booked","N/A"],
     ["Not scheduled","Not scheduled"],["Completed","Booked"],["Overdue","Booked"],
     ["Not scheduled","Not scheduled"],["Booked","Not scheduled"],["Completed","Not scheduled"],
-    ["Not scheduled","Not scheduled"],["Booked","Not scheduled"],["Completed","Booked"],
-    ["Overdue","Not scheduled"],["Not scheduled","Not scheduled"],
+    ["Not scheduled","N/A"],["Booked","Not scheduled"],["Completed","Booked"],
+    ["Overdue","N/A"],["Not scheduled","Not scheduled"],
   ];
   const mkDate=d=>new Date(now().getTime()+d*864e5).toISOString();
   const officeHCVSummary=CONFIG.offices.map((o,i)=>{
-    const [s1,s2]=sampleStatuses[i]||["Not scheduled","Not scheduled"];
-    const mkV=s=>({status:s,outcome:s==="Completed"?(i%3===0?"Minor Issues":"All Good"):null,
+    const allowed=CONFIG.hcvVisits[o]||1;
+    const [s1,s2raw]=sampleStatuses[i]||["Not scheduled","Not scheduled"];
+    const s2=allowed<2?"N/A":s2raw;
+    const mkV=s=>s==="N/A"?{status:"N/A",scheduled:null,completed:null,outcome:null}:
+      ({status:s,outcome:s==="Completed"?(i%3===0?"Minor Issues":"All Good"):null,
       scheduled:s==="Not scheduled"?null:s==="Completed"?mkDate(-60):s==="Overdue"?mkDate(-5):mkDate(30),
       completed:s==="Completed"?mkDate(-45):null});
-    return {office:o,visit1:mkV(s1),visit2:mkV(s2)};
+    return {office:o,visit1:mkV(s1),visit2:mkV(s2),allowedVisits:allowed};
   });
 
   const report=computeMetrics(cases,hcvRows,officeHCVSummary,reportingMonthKey);
