@@ -530,8 +530,8 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
 
   const openByCategory={};
   FAULTS.forEach(f=>{openByCategory[f]=open.filter(c=>c.fault===f&&!c.warranty).length;});
-  const roomDownBreaches=open.filter(c=>!c.warranty&&c.fault==="Room Down"&&
-    c.occurredAt&&businessHoursBetween(c.occurredAt,now().toISOString())>t["Room Down"]).length;
+  const roomDownBreaches = open.filter(c=>!c.warranty&&c.fault==="Room Down"&&
+    c.responseHrs!=null&&c.responseHrs>t["Room Down"]).length;
 
   // HCV
   const expectedTotal=Object.values(CONFIG.hcvVisits).reduce((a,b)=>a+b,0);
