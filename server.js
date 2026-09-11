@@ -368,7 +368,8 @@ async function buildLiveReport(reportingMonthKey=null) {
       return walk(items);
     }
     const scheduledRaw=getF("scheduled"), visitNumRaw=getF("visit"), outcome=getF("outcome")||getF("general state")||"—";
-    const completed=pick(i,["date_completed","completed_at"]), isCompleted=!!completed;
+const conductedOn=getF("conducted");
+const completed=conductedOn||pick(i,["date_completed","completed_at"]), isCompleted=!!completed;
     const sd=scheduledRaw?new Date(scheduledRaw):null;
     const status=isCompleted?"Completed":sd&&sd<now()?"Overdue":sd&&sd>=now()?"Booked":"In Progress";
     return { id, office:matchOffice(siteLbl), visitNum:visitNumRaw&&String(visitNumRaw).includes("2")?2:1,
