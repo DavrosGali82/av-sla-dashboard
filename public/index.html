@@ -253,7 +253,8 @@ async function reload(month){
   document.getElementById("h-title").textContent=`${R.meta.company} — AV Service Report`;
   document.getElementById("h-sub").textContent=`Reporting period: ${R.meta.reportingMonthLabel||""} · SLA ref: ${R.meta.slaRef}`;
   buildAllPages();
-  drawChartsForPage("summary");
+const activeTab=document.querySelector(".tab.active")?.dataset?.id||"summary";
+drawChartsForPage(activeTab);
 }
 
 function setBanner(r,err){
