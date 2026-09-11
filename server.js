@@ -9,7 +9,6 @@ const PORT = process.env.PORT || 3000;
 const SC_TOKEN = process.env.SC_API_TOKEN || "";
 const SC_BASE = "https://api.safetyculture.io";
 
-/* ── Improvements store ── */
 const IMPROVEMENTS_FILE = path.join(__dirname, "data", "improvements.json");
 function loadImprovements() {
   try { if (existsSync(IMPROVEMENTS_FILE)) return JSON.parse(readFileSync(IMPROVEMENTS_FILE, "utf8")); } catch {}
@@ -20,7 +19,6 @@ function saveImprovements(data) {
 }
 let improvements = loadImprovements();
 
-/* ── UK Bank Holidays ── */
 let bankHolidays = new Set();
 let bhLoaded = false;
 async function loadBankHolidays() {
@@ -33,16 +31,12 @@ async function loadBankHolidays() {
   } catch {}
 }
 
-/* =====================================================================
-   CONFIG
-   ===================================================================== */
 const CONFIG = {
   companyName: "Grant Thornton UK",
   reportStartDate: "2026-05-08T00:00:00Z",
   targets: { "Room Down": 8, "Partial Fault": 24, Routine: 120 },
   responseTargets: { email: 4, telephone: 1, hcReport: 120 },
   workdayStart: 8, workdayEnd: 18,
-  visitsPerOfficePerYear: 2, // default fallback only
   hcvVisits: {
     Birmingham:2, Bristol:1, Cambridge:2, Cardiff:1, Colchester:1,
     Edinburgh:2, Gatwick:1, Glasgow:2, Leeds:2, Leicester:2,
@@ -59,17 +53,12 @@ const CONFIG = {
   issueCategoryId: "c3a2c651-8e31-4c10-a0eb-eae123f15f18",
   healthCheckTemplateId: "template_58624410208f4025b0757d47d04008d1",
   officeHCVTemplateId:   "template_a68b6c7b138e438f89c8706ff3b7ea37",
-
-  // Action label name → category
   warrantyLabel:        "Warranty Call Out",
   clientDelayLabel:     "Client Delay",
   remoteResolutionLabel:"Remote Resolution",
   faultLabels:          ["Room Down","Partial Fault","Routine"],
-  // Site visit labels — these indicate an engineer went to site (counts as call-out)
   siteVisitLabels:      ["Hardware Replacement","Re-Cabling","Re-Configuration","Consumable","No Fault Found","HCV Completed"],
   resolutionLabels:     ["Hardware Replacement","Re-Cabling","Re-Configuration","Consumable","No Fault Found","HCV Completed","Remote Resolution"],
-
-  // Label IDs (for future use)
   labelIds: {
     clientDelay:      "48226bf8-50f9-4c3a-a934-6dd6b6cca5ba",
     remoteResolution: "f26c5433-7619-4cec-8e60-e8c9fed01a37",
@@ -80,57 +69,36 @@ const CONFIG = {
 const TOTAL_CALLOUT_ALLOC = Object.values(CONFIG.callOutAllocation).reduce((a,b)=>a+b,0);
 const FAULTS = ["Room Down","Partial Fault","Routine"];
 
-/* ----------------------------------------------------------------
-   Business hours calculator (Mon-Fri 8am-6pm UK time, excl. bank holidays)
-   Converts all timestamps to UK local time (handles GMT/BST automatically)
-   before applying the 8am-6pm window.
----------------------------------------------------------------- */
-
-// Get UK local hour (handles BST/GMT automatically)
 function ukHour(dt) {
   const s = dt.toLocaleString("en-GB", { timeZone:"Europe/London", hour:"2-digit", minute:"2-digit", hour12:false });
   const [h, m] = s.split(":").map(Number);
   return h + m/60;
 }
-
-// Get UK local date string YYYY-MM-DD
 function ukDateKey(dt) {
   return dt.toLocaleDateString("en-GB", { timeZone:"Europe/London", year:"numeric", month:"2-digit", day:"2-digit" })
     .split("/").reverse().join("-");
 }
-
 function isWorkday(dt) {
-  // Use UK local day of week
   const dow = new Date(dt.toLocaleString("en-US", { timeZone:"Europe/London" })).getDay();
   if (dow === 0 || dow === 6) return false;
   return !bankHolidays.has(ukDateKey(dt));
 }
-
 function nextBusinessOpen(dt) {
   const S = CONFIG.workdayStart, E = CONFIG.workdayEnd;
   const d = new Date(dt);
   const h = ukHour(d);
-
   if (isWorkday(d) && h >= S && h < E) return d;
-
-  // Before hours on a workday — clamp to 8am UK same day
   if (isWorkday(d) && h < S) {
-    // Find 8am UK time for this date
     const dateStr = ukDateKey(d);
     const clamped = new Date(`${dateStr}T00:00:00`);
-    // Adjust to get exactly 8am UK time
     const testH = ukHour(clamped);
     clamped.setTime(clamped.getTime() + (S - testH) * 3600000);
     return clamped;
   }
-
-  // After hours or weekend — advance to next workday 8am
   const next = new Date(d);
   next.setTime(next.getTime() + 24*3600000);
-  // Reset to start of day UK time
   const nextDateStr = ukDateKey(next);
   const nextDay = new Date(`${nextDateStr}T00:00:00Z`);
-  // Find 8am UK for that day
   for (let offset = 0; offset <= 6; offset++) {
     const try_ = new Date(nextDay.getTime() + offset * 24*3600000);
     if (isWorkday(try_)) {
@@ -141,25 +109,17 @@ function nextBusinessOpen(dt) {
   }
   return next;
 }
-
 function businessHoursBetween(startISO, endISO) {
   if (!startISO || !endISO) return null;
   const start = nextBusinessOpen(new Date(startISO));
   const end   = new Date(endISO);
   if (end <= start) return 0;
   const S = CONFIG.workdayStart, E = CONFIG.workdayEnd;
-
   let total = 0;
-  // Iterate day by day in UK date space
   const startDateKey = ukDateKey(start);
   const endDateKey   = ukDateKey(end);
-
-  // Build list of UK dates to iterate
-  const cur = new Date(start);
-  cur.setUTCHours(0,0,0,0);
-  const endDay = new Date(end);
-  endDay.setUTCHours(0,0,0,0);
-
+  const cur = new Date(start); cur.setUTCHours(0,0,0,0);
+  const endDay = new Date(end); endDay.setUTCHours(0,0,0,0);
   while (cur <= endDay) {
     const curKey = ukDateKey(cur);
     if (isWorkday(cur)) {
@@ -173,7 +133,6 @@ function businessHoursBetween(startISO, endISO) {
   return +total.toFixed(2);
 }
 
-/* ---------------------------------------------------------------- utils */
 const mKey = d => { const x=new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}`; };
 const now  = () => new Date();
 
@@ -185,34 +144,23 @@ function last6Months() {
   }
   return out;
 }
-
 function matchOffice(s) {
   if (!s) return "Other";
   const sl = s.toLowerCase();
   for (const o of CONFIG.offices) { if (sl.includes(o.toLowerCase())) return o; }
   return s;
 }
-
 function pick(o, keys) {
   for (const k of keys) if (o[k]!=null && o[k]!=="") return o[k];
   return null;
 }
-
-/* ----------------------------------------------------------------
-   Parse action_label pipe-separated JSON string
-   e.g. {"label_id":"xxx"|"label_name":"Partial Fault"}|{"label_id":"yyy"|"label_name":"Re-Configuration"}
----------------------------------------------------------------- */
 function parseActionLabels(labelStr) {
   if (!labelStr) return [];
   try {
-    // Replace pipe-separators between objects, fix internal pipes to commas
-    const fixed = "[" + labelStr
-      .split("}|{").join("},{")
-      .replace(/\|/g, ",") + "]";
+    const fixed = "[" + labelStr.split("}|{").join("},{").replace(/\|/g, ",") + "]";
     const arr = JSON.parse(fixed);
     return arr.map(l => l.label_name || l.labelName || "").filter(Boolean);
   } catch {
-    // Fallback: extract label_name values with regex
     const names = [];
     const re = /"label_name"\s*[:|,]\s*"([^"]+)"/g;
     let m;
@@ -220,16 +168,7 @@ function parseActionLabels(labelStr) {
     return names;
   }
 }
-
-/* ----------------------------------------------------------------
-   Match issue to actions by call reference number in title
-   Issue title = "F2570732 - The Exchange"
-   Action title = "F2570732 - No mic audio" or "F2570732 - Ryder Screen"
-   Matches on the reference number only (first word before space/dash)
-   Returns ALL matching actions so labels from all are collected
----------------------------------------------------------------- */
 function matchIssueToActions(issue, actions) {
-  // Extract just the reference number e.g. "F2570732" from "F2570732 - The Exchange"
   const ref = (issue.title || "").split(/[\s-]/)[0].trim();
   if (!ref || ref.length < 3) return [];
   return actions.filter(a => {
@@ -238,13 +177,11 @@ function matchIssueToActions(issue, actions) {
   });
 }
 
-/* ---------------------------------------------------------------- SC API */
 async function scFetch(p) {
   const r = await fetch(`${SC_BASE}${p}`, { headers:{ Authorization:`Bearer ${SC_TOKEN}`, Accept:"application/json" } });
   if (!r.ok) throw new Error(`SC ${p} -> ${r.status}`);
   return r.json();
 }
-
 async function pullFeed(p) {
   let url=p, rows=[], guard=0;
   while (url && guard<200) {
@@ -256,35 +193,24 @@ async function pullFeed(p) {
   return rows;
 }
 
-/* ---------------------------------------------------------------- live */
 async function buildLiveReport(reportingMonthKey=null) {
   await loadBankHolidays();
   const start = new Date(CONFIG.reportStartDate);
-
-  // Pull Issues (Client Service Requests)
   const allIssues = await pullFeed(`/feed/issues`).catch(()=>[]);
   const issues = allIssues.filter(i =>
     i.category_id === CONFIG.issueCategoryId &&
     new Date(i.created_at||0) >= start
   );
-
-  // Pull Actions
   const allActions = await pullFeed(`/feed/actions`).catch(()=>[]);
-
-  // Build cases by matching issues to actions
   const cases = issues.map(issue => {
     const matchedActions = matchIssueToActions(issue, allActions);
     const labels = matchedActions.flatMap(a => parseActionLabels(a.action_label));
-
     const fault            = labels.find(l => FAULTS.includes(l)) || "Routine";
     const resolution       = labels.find(l => CONFIG.resolutionLabels.includes(l)) || null;
     const clientDelay      = labels.includes(CONFIG.clientDelayLabel);
     const remoteResolution = labels.includes(CONFIG.remoteResolutionLabel);
-    // warranty flag preserved for SLA exclusion — remote just affects call-out counting
     const warranty         = labels.includes(CONFIG.warrantyLabel);
-    // site visit only applies if not resolved remotely
     const siteVisit        = !remoteResolution && labels.some(l => CONFIG.siteVisitLabels.includes(l));
-
     const occurredAt  = issue.occurred_at || issue.created_at;
     const respondedAt = issue.created_at;
     const firstAction = matchedActions[0] || null;
@@ -292,41 +218,16 @@ async function buildLiveReport(reportingMonthKey=null) {
     const resolvedAt  = firstAction?.completed_at || null;
     const isClosed    = !!(resolvedAt || issue.status === "CLOSED" || issue.completed_at);
     const closedAt    = issue.completed_at || resolvedAt || null;
-
-    // KPI 1 — Response time (contractual SLA) = issue.created_at − issue.occurred_at
-    const responseHrs = businessHoursBetween(occurredAt, respondedAt);
-
-    // KPI 2 — Time to site visit = action.created_at − issue.occurred_at
+    const responseHrs  = businessHoursBetween(occurredAt, respondedAt);
     const siteVisitHrs = siteVisitAt ? businessHoursBetween(occurredAt, siteVisitAt) : null;
-
-    // KPI 3 — Full resolution = action.completed_at − issue.occurred_at
     const resolutionHrs = resolvedAt ? businessHoursBetween(occurredAt, resolvedAt) : null;
-
-    return {
-      id:            issue.id,
-      title:         issue.title || "Issue",
-      fault,
-      contactMethod: "Unknown", // not available in feed/issues
-      status:        isClosed ? "Closed" : "Open",
-      occurredAt,
-      respondedAt,
-      siteVisitAt,
-      closedAt,
-      responseHrs,
-      siteVisitHrs,
-      resolutionHrs,
-      resolution,
-      warranty,
-      clientDelay,
-      remoteResolution,
-      siteVisit,
-      office:        matchOffice(issue.site_name),
-      room:          issue.site_name || "—",
-      callReference: issue.title,
-    };
+    return { id:issue.id, title:issue.title||"Issue", fault, contactMethod:"Unknown",
+             status:isClosed?"Closed":"Open", occurredAt, respondedAt, siteVisitAt, closedAt,
+             responseHrs, siteVisitHrs, resolutionHrs, resolution, warranty, clientDelay,
+             remoteResolution, siteVisit, office:matchOffice(issue.site_name),
+             room:issue.site_name||"—", callReference:issue.title };
   });
 
-  // Inspections for HCV
   const thisYearStart = new Date(now().getFullYear(), 0, 1);
   const allInsp = await pullFeed(`/feed/inspections?modified_after=${encodeURIComponent(CONFIG.reportStartDate)}`).catch(()=>[]);
   const sitesRaw = await pullFeed("/feed/sites").catch(()=>[]);
@@ -347,7 +248,6 @@ async function buildLiveReport(reportingMonthKey=null) {
     pick(i,["template_id","templateId"])===CONFIG.officeHCVTemplateId &&
     new Date(pick(i,["created_at","date_started","date_completed"])||0) >= thisYearStart
   );
-
   const officeHCVRaw = await Promise.all(officeHCVInsp.map(async i => {
     const id = String(pick(i,["audit_id","inspection_id","id"])||"");
     const details = await scFetch(`/inspections/v1/inspections/${id}/details`).catch(()=>null);
@@ -368,8 +268,8 @@ async function buildLiveReport(reportingMonthKey=null) {
       return walk(items);
     }
     const scheduledRaw=getF("scheduled"), visitNumRaw=getF("visit"), outcome=getF("outcome")||getF("general state")||"—";
-const conductedOn=getF("conducted");
-const completed=conductedOn||pick(i,["date_completed","completed_at"]), isCompleted=!!completed;
+    const conductedOn=getF("conducted");
+    const completed=conductedOn||pick(i,["date_completed","completed_at"]), isCompleted=!!completed;
     const sd=scheduledRaw?new Date(scheduledRaw):null;
     const status=isCompleted?"Completed":sd&&sd<now()?"Overdue":sd&&sd>=now()?"Booked":"In Progress";
     return { id, office:matchOffice(siteLbl), visitNum:visitNumRaw&&String(visitNumRaw).includes("2")?2:1,
@@ -381,9 +281,7 @@ const completed=conductedOn||pick(i,["date_completed","completed_at"]), isComple
     const v1=visits.find(h=>h.visitNum===1)||null, v2=visits.find(h=>h.visitNum===2)||null;
     const allowedVisits=CONFIG.hcvVisits[o]||2;
     const mkSlot=v=>v?{status:v.status,scheduled:v.scheduled,completed:v.completed,outcome:v.outcome}:{status:"Not scheduled",scheduled:null,completed:null,outcome:null};
-    const visit2Slot = allowedVisits<2
-      ? {status:"N/A",scheduled:null,completed:null,outcome:null}
-      : mkSlot(v2);
+    const visit2Slot=allowedVisits<2?{status:"N/A",scheduled:null,completed:null,outcome:null}:mkSlot(v2);
     return {office:o,visit1:mkSlot(v1),visit2:visit2Slot,allowedVisits};
   });
 
@@ -391,40 +289,35 @@ const completed=conductedOn||pick(i,["date_completed","completed_at"]), isComple
   report.meta.mode = "live";
   report.improvements = improvements;
   report.meta.connection = {
-    issuesPulled:    allIssues.length,
-    casesInPeriod:   cases.length,
-    actionsPulled:   allActions.length,
-    inspectionsPulled: allInsp.length,
-    officeHCVPulled: officeHCVInsp.length,
+    issuesPulled:allIssues.length, casesInPeriod:cases.length,
+    actionsPulled:allActions.length, inspectionsPulled:allInsp.length,
+    officeHCVPulled:officeHCVInsp.length,
   };
   return report;
 }
 
-/* ---------------------------------------------------------------- metrics */
 function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=null) {
   const months = last6Months();
-  const curKey = reportingMonthKey || months[months.length-2].key;
-  const curMonth = months.find(m=>m.key===curKey)||months[months.length-2];
+  const curKey = reportingMonthKey || months[months.length-1].key;
+  const curMonth = months.find(m=>m.key===curKey)||months[months.length-1];
   const t = CONFIG.targets;
-
   const closed    = cases.filter(c=>c.status==="Closed");
   const open      = cases.filter(c=>c.status==="Open");
   const slaClosed = closed.filter(c=>!c.warranty);
+  const allClosed = closed;
 
   const trendLoggedClosed = months.map(m=>({
-    month:  m.label,
-    logged: cases.filter(c=>mKey(c.respondedAt)===m.key).length,
-    closed: closed.filter(c=>mKey(c.closedAt)===m.key).length,
+    month:m.label,
+    logged:cases.filter(c=>mKey(c.respondedAt)===m.key).length,
+    closed:closed.filter(c=>mKey(c.closedAt)===m.key).length,
   }));
 
-  // SLA performance — response time vs targets (contractual KPI)
   const slaByCategory = FAULTS.map(f=>{
     const cc = slaClosed.filter(c=>c.fault===f&&c.responseHrs!=null);
     const avg = cc.length ? cc.reduce((s,c)=>s+c.responseHrs,0)/cc.length : 0;
     return {fault:f, avg:+avg.toFixed(2), target:t[f], within:cc.length?avg<=t[f]:true, count:cc.length};
   });
 
-  // Site visit averages — with and without client delay
   const siteVisitAvg = FAULTS.map(f=>{
     const all  = slaClosed.filter(c=>c.fault===f&&c.siteVisitHrs!=null);
     const excl = all.filter(c=>!c.clientDelay);
@@ -433,14 +326,22 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
     return {fault:f, avgAll, avgExcl, countAll:all.length, countExcl:excl.length};
   });
 
-  // Full resolution averages
+  // ── NEW: site visit trend by month ──
+  const siteVisitTrend = months.map(m=>{
+    const row={month:m.label};
+    FAULTS.forEach(f=>{
+      const cc=slaClosed.filter(c=>c.fault===f&&mKey(c.closedAt)===m.key&&c.siteVisitHrs!=null);
+      row[f]=cc.length?+(cc.reduce((s,c)=>s+c.siteVisitHrs,0)/cc.length).toFixed(2):null;
+    });
+    return row;
+  });
+
   const resolutionAvg = FAULTS.map(f=>{
     const cc = slaClosed.filter(c=>c.fault===f&&c.resolutionHrs!=null);
     const avg = cc.length ? +(cc.reduce((s,c)=>s+c.resolutionHrs,0)/cc.length).toFixed(2) : null;
     return {fault:f, avg, count:cc.length};
   });
 
-  // 6-month response time trend
   const slaTrend = months.map(m=>{
     const row={month:m.label};
     FAULTS.forEach(f=>{
@@ -450,7 +351,6 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
     return row;
   });
 
-  // Breached cases (response time vs SLA target)
   const breachedCases = slaClosed
     .filter(c=>c.responseHrs!=null&&c.responseHrs>t[c.fault])
     .map(c=>({title:c.title,fault:c.fault,room:c.room,office:c.office,
@@ -459,10 +359,6 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
                closed:c.closedAt,clientDelay:c.clientDelay}))
     .sort((a,b)=>b.over-a.over).slice(0,20);
 
-  // Room and resolution breakdowns
-  // All closed cases (SLA + warranty) for charts
-  const allClosed = closed; // includes warranty
-
   const roomCount={};
   allClosed.forEach(c=>{roomCount[c.room]=(roomCount[c.room]||0)+1;});
   const topRooms=Object.entries(roomCount).sort((a,b)=>b[1]-a[1]).slice(0,7).map(([name,value])=>({name,value}));
@@ -470,8 +366,8 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
   const roomTrend=months.map(m=>{
     const row={month:m.label};
     topRoomNames.forEach(r=>{
-      row[r]       = slaClosed.filter(c=>c.room===r&&mKey(c.closedAt)===m.key).length;
-      row[r+"_w"]  = allClosed.filter(c=>c.warranty&&c.room===r&&mKey(c.closedAt)===m.key).length;
+      row[r]      = slaClosed.filter(c=>c.room===r&&mKey(c.closedAt)===m.key).length;
+      row[r+"_w"] = allClosed.filter(c=>c.warranty&&c.room===r&&mKey(c.closedAt)===m.key).length;
     });
     return row;
   });
@@ -489,25 +385,17 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
     return row;
   });
 
-  // Service calls trend — all cases including warranty
   const allCasesServiceTrend = months.map(m=>({
     month:m.label,
     sla:     cases.filter(c=>!c.warranty&&mKey(c.respondedAt)===m.key).length,
     warranty:cases.filter(c=>c.warranty&&mKey(c.respondedAt)===m.key).length,
   }));
 
-  // Office allocations
   const officeUsage={}, warrantyByOffice={}, remoteByOffice={};
   cases.forEach(c=>{
-    if(c.remoteResolution){
-      // Remote takes precedence for counting — no call-out used regardless of warranty
-      remoteByOffice[c.office]=(remoteByOffice[c.office]||0)+1;
-    } else if(c.warranty){
-      warrantyByOffice[c.office]=(warrantyByOffice[c.office]||0)+1;
-    } else if(c.siteVisit){
-      // Only non-warranty, non-remote site visits count against call-out allocation
-      officeUsage[c.office]=(officeUsage[c.office]||0)+1;
-    }
+    if(c.remoteResolution) remoteByOffice[c.office]=(remoteByOffice[c.office]||0)+1;
+    else if(c.warranty)    warrantyByOffice[c.office]=(warrantyByOffice[c.office]||0)+1;
+    else if(c.siteVisit)   officeUsage[c.office]=(officeUsage[c.office]||0)+1;
   });
   const allOffices=new Set([...CONFIG.offices,...Object.keys(officeUsage)]);
   const officeAllocations=[...allOffices].map(o=>{
@@ -515,11 +403,9 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
     const pct=+(used/alloc*100).toFixed(1);
     return {office:o,alloc,used,remaining:alloc-used,pct,
             rag:pct>=90?"red":pct>=60?"amber":"green",
-            warranty:warrantyByOffice[o]||0,
-            remote:remoteByOffice[o]||0};
+            warranty:warrantyByOffice[o]||0, remote:remoteByOffice[o]||0};
   }).sort((a,b)=>b.pct-a.pct);
 
-  // Current month
   const curCases  = cases.filter(c=>mKey(c.respondedAt)===curKey);
   const curClosed = slaClosed.filter(c=>mKey(c.closedAt)===curKey);
   const openCases = open.map(c=>({
@@ -531,10 +417,9 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
 
   const openByCategory={};
   FAULTS.forEach(f=>{openByCategory[f]=open.filter(c=>c.fault===f&&!c.warranty).length;});
-  const roomDownBreaches = open.filter(c=>!c.warranty&&c.fault==="Room Down"&&
+  const roomDownBreaches=open.filter(c=>!c.warranty&&c.fault==="Room Down"&&
     c.responseHrs!=null&&c.responseHrs>t["Room Down"]).length;
 
-  // HCV
   const expectedTotal=Object.values(CONFIG.hcvVisits).reduce((a,b)=>a+b,0);
   const allVisitSlots=officeHCVSummary.flatMap(o=>{
     const slots=[o.visit1];
@@ -552,7 +437,7 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
     warrantySixMonth:cases.filter(c=>c.warranty).length,
     warrantyThisMonthCases:curCases.filter(c=>c.warranty).map(c=>({title:c.title,fault:c.fault,room:c.room,created:c.respondedAt,status:c.status,warranty:true})),
     openByCategory, roomDownBreaches,
-    trendLoggedClosed, slaByCategory, siteVisitAvg, resolutionAvg, slaTrend, breachedCases,
+    trendLoggedClosed, slaByCategory, siteVisitAvg, siteVisitTrend, resolutionAvg, slaTrend, breachedCases,
     resolutionBreakdown:{
       siteVisit:        cases.filter(c=>c.siteVisit).length,
       siteVisitSLA:     cases.filter(c=>!c.warranty&&c.siteVisit).length,
@@ -586,7 +471,6 @@ function computeMetrics(cases, hcvRows, officeHCVSummary=[], reportingMonthKey=n
   };
 }
 
-/* ---------------------------------------------------------------- sample */
 function buildSampleReport(reportingMonthKey=null) {
   const months=last6Months();
   const roomDefs=[
@@ -610,10 +494,8 @@ function buildSampleReport(reportingMonthKey=null) {
       const resH=i%6===0?tgt*1.8:tgt*(0.2+(i%4)*0.15);
       const closedAt=isOpen?null:new Date(occurred.getTime()+resH*36e5);
       const rd=roomDefs[(mi*3+i)%roomDefs.length];
-      const clientDelay=i%8===0;
       cases.push({
         id:`s-${mi}-${i}`, title:`GT-${2570000+mi*100+i}`, fault,
-        contactMethod:i%3===0?"Phone Call":"Email",
         status:isOpen?"Open":"Closed",
         occurredAt:occurred.toISOString(), respondedAt:responded.toISOString(),
         siteVisitAt:isOpen?null:siteVisit.toISOString(),
@@ -622,9 +504,8 @@ function buildSampleReport(reportingMonthKey=null) {
         siteVisitHrs:isOpen?null:+(businessHoursBetween(occurred.toISOString(),siteVisit.toISOString())||0).toFixed(2),
         resolutionHrs:isOpen?null:+(businessHoursBetween(occurred.toISOString(),closedAt?.toISOString()||null)||0).toFixed(2),
         resolution:isOpen?null:["Re-Configuration","Hardware Replacement","Re-Cabling","No Fault Found","Consumable"][i%5],
-        siteVisit:!isOpen&&i%4!==0,        // ~75% are site visits
-        remoteResolution:!isOpen&&i%4===0, // ~25% resolved remotely
-        warranty:false, clientDelay, office:rd.office, room:rd.room,
+        siteVisit:!isOpen&&i%4!==0, remoteResolution:!isOpen&&i%4===0,
+        warranty:false, clientDelay:i%8===0, office:rd.office, room:rd.room,
         callReference:`GT-${2570000+mi*100+i}`,
       });
     }
@@ -634,7 +515,6 @@ function buildSampleReport(reportingMonthKey=null) {
     {ref:"HCV-001",room:"Event Rooms (Leeds)",status:"Completed",scheduled:"2025-09-15",completed:"2025-12-19"},
     {ref:"HCV-002",room:"Event Rooms (London)",status:"In Progress",scheduled:"2025-11-01",completed:null},
   ];
-
   const sampleStatuses=[
     ["Completed","Booked"],["Booked","N/A"],["Not scheduled","Not scheduled"],
     ["Completed","N/A"],["Overdue","N/A"],["Booked","N/A"],
@@ -662,9 +542,7 @@ function buildSampleReport(reportingMonthKey=null) {
   return report;
 }
 
-/* ---------------------------------------------------------------- routes */
 app.use(express.json());
-
 app.get("/api/report", async (req,res)=>{
   const m=req.query.month||null;
   try {
@@ -672,13 +550,10 @@ app.get("/api/report", async (req,res)=>{
     res.json(await buildLiveReport(m));
   } catch(err) { console.error(err); res.json({error:err.message,fallback:buildSampleReport(m)}); }
 });
-
 app.get("/api/improvements",        (req,res)=>res.json(improvements));
 app.post("/api/improvements",       (req,res)=>{ const item={...req.body,id:"imp-"+Date.now()}; improvements.push(item); saveImprovements(improvements); res.json(item); });
 app.put("/api/improvements/:id",    (req,res)=>{ const idx=improvements.findIndex(i=>i.id===req.params.id); if(idx===-1)return res.status(404).json({error:"Not found"}); improvements[idx]={...improvements[idx],...req.body}; saveImprovements(improvements); res.json(improvements[idx]); });
 app.delete("/api/improvements/:id", (req,res)=>{ improvements=improvements.filter(i=>i.id!==req.params.id); saveImprovements(improvements); res.json({ok:true}); });
-
 app.use(express.static(path.join(__dirname,"public")));
 app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
-
 app.listen(PORT,()=>console.log(`AV Dashboard on port ${PORT} — ${SC_TOKEN?"LIVE":"SAMPLE DATA"}`));
