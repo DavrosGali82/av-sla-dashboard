@@ -253,8 +253,7 @@ async function reload(month){
   document.getElementById("h-title").textContent=`${R.meta.company} — AV Service Report`;
   document.getElementById("h-sub").textContent=`Reporting period: ${R.meta.reportingMonthLabel||""} · SLA ref: ${R.meta.slaRef}`;
   buildAllPages();
-const activeTab=document.querySelector(".tab.active")?.dataset?.id||"summary";
-drawChartsForPage(activeTab);
+  drawChartsForPage("summary");
 }
 
 function setBanner(r,err){
@@ -847,11 +846,10 @@ function drawOfficeCharts(){
 function drawMetricsCharts(){
   if(!R) return;
   const L=R.meta.monthsLabels;
-  // Site visit trend — reuse slaTrend data as proxy (response time trend)
   mkChart("cSiteVisit","line",{labels:L,datasets:FAULTS.map(f=>({
-    label:f, data:(R.siteVisitAvg||[]).map(s=>s.fault===f?s.avgAll:null),
+    label:f, data:(R.siteVisitTrend||[]).map(x=>x[f]??null),
     borderColor:FC[f],tension:.3,spanGaps:true
-  }))},{plugins:{legend:{position:"bottom"}}});
+  }))},{plugins:{legend:{position:"bottom"}},scales:{y:{beginAtZero:true}}});
 }
 
 /* ── bootstrap */
